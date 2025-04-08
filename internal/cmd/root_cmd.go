@@ -18,6 +18,7 @@ import (
 
 	"github.com/innabox/fulfillment-cli/internal/cmd/create"
 	"github.com/innabox/fulfillment-cli/internal/cmd/get"
+	"github.com/innabox/fulfillment-cli/internal/cmd/getkubeconfig"
 	"github.com/innabox/fulfillment-cli/internal/cmd/login"
 	"github.com/innabox/fulfillment-cli/internal/cmd/logout"
 )
@@ -31,6 +32,7 @@ func Root() *cobra.Command {
 	}
 	result.AddCommand(create.Cmd())
 	result.AddCommand(get.Cmd())
+	result.AddCommand(getkubeconfig.Cmd())
 	result.AddCommand(login.Cmd())
 	result.AddCommand(logout.Cmd())
 	return result
