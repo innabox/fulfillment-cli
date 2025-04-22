@@ -21,6 +21,7 @@ import (
 	"fmt"
 	"os"
 	"path"
+	"sort"
 	"strings"
 	"text/tabwriter"
 
@@ -51,6 +52,18 @@ const (
 	outputFormatYaml  = "yaml"
 )
 
+// Frequently used names:
+const (
+	// Methods:
+	getMethodName  = protoreflect.Name("Get")
+	listMethodName = protoreflect.Name("List")
+
+	// Fields:
+	idFieldName     = protoreflect.Name("id")
+	itemsFieldName  = protoreflect.Name("items")
+	objectFieldName = protoreflect.Name("object")
+)
+
 func Cmd() *cobra.Command {
 	runner := &runnerContext{
 		pluralizer: pluralize.NewClient(),
@@ -61,7 +74,6 @@ func Cmd() *cobra.Command {
 	result := &cobra.Command{
 		Use:   "get OBJECT [OPTION]... [ID]...",
 		Short: "Get objects",
-		Args:  cobra.MinimumNArgs(1),
 		RunE:  runner.run,
 	}
 	flags := result.Flags()
@@ -103,6 +115,31 @@ func (c *runnerContext) run(cmd *cobra.Command, args []string) error {
 	// Get the context:
 	ctx := cmd.Context()
 
+	// Check that the object type has been specified:
+	if len(args) == 0 {
+		objectDescs := c.findObjectTypes()
+		objectTypes := make([]string, len(objectDescs))
+		for i, objectDesc := range objectDescs {
+			objectTypes[i] = c.pluralizer.Plural(strings.ToLower(string(objectDesc.Name())))
+		}
+		sort.Strings(objectTypes)
+		fmt.Printf("You must specify the type of object to get.\n")
+		fmt.Printf("\n")
+		fmt.Printf("The following object types are available:\n")
+		fmt.Printf("\n")
+		for _, objectType := range objectTypes {
+			fmt.Printf("- %s\n", objectType)
+		}
+		fmt.Printf("\n")
+		fmt.Printf("For example, to get the list of cluster templates:\n")
+		fmt.Printf("\n")
+		fmt.Printf("%s get clustertemplates\n", os.Args[0])
+		fmt.Printf("\n")
+		fmt.Printf("Use the '--help' option to get more details about the command.\n")
+		return nil
+	}
+	c.objectType = args[0]
+
 	// Check the flags:
 	if c.outputFormat != outputFormatTable && c.outputFormat != outputFormatJson && c.outputFormat != outputFormatYaml {
 		return fmt.Errorf(
@@ -121,7 +158,7 @@ func (c *runnerContext) run(cmd *cobra.Command, args []string) error {
 	}
 
 	// Create the gRPC connection from the configuration:
-	c.grpcConn, err = cfg.Connect()
+	c.grpcConn, err = cfg.Connect(ctx)
 	if err != nil {
 		return fmt.Errorf("failed to create gRPC connection: %w", err)
 	}
@@ -129,7 +166,6 @@ func (c *runnerContext) run(cmd *cobra.Command, args []string) error {
 
 	// Analyze the protocol buffers descriptors to find the information that we need, like the name of the method,
 	// the request and response types, and the type of the items.
-	c.objectType = args[0]
 	err = c.analyzeDescriptors()
 	if err != nil {
 		return err
@@ -190,6 +226,72 @@ func (c *runnerContext) get(ctx context.Context, ids []string) (result []proto.M
 	}
 	result = objects
 	return
+}
+
+// findObjectTypes finds all the message types that satisfy the conditions to be considered objects that can be handled
+// by this command.
+func (c *runnerContext) findObjectTypes() []protoreflect.MessageDescriptor {
+	var objectDescs []protoreflect.MessageDescriptor
+	protoregistry.GlobalFiles.RangeFiles(func(fileDesc protoreflect.FileDescriptor) bool {
+		serviceDescs := fileDesc.Services()
+		for i := range serviceDescs.Len() {
+			serviceDesc := serviceDescs.Get(i)
+			methodDescs := serviceDesc.Methods()
+
+			// The service must have `List` and `Get` methods:
+			listDesc := methodDescs.ByName(listMethodName)
+			getDesc := methodDescs.ByName(getMethodName)
+			if listDesc == nil || getDesc == nil {
+				continue
+			}
+
+			// The response of the `List` method must have an `items` field, and it must be an list
+			// of objects.
+			listItemsDesc := listDesc.Output().Fields().ByName(itemsFieldName)
+			if listItemsDesc == nil {
+				continue
+			}
+			if listItemsDesc.Cardinality() != protoreflect.Repeated {
+				continue
+			}
+			if listItemsDesc.Kind() != protoreflect.MessageKind {
+				continue
+			}
+
+			// The request of the `Get` method must have an `id` string field:
+			getIdDesc := getDesc.Input().Fields().ByName(idFieldName)
+			if getIdDesc == nil {
+				continue
+			}
+			if getIdDesc.Cardinality() == protoreflect.Repeated {
+				continue
+			}
+			if getIdDesc.Kind() != protoreflect.StringKind {
+				continue
+			}
+
+			// The response of the `Get` method must have an `object` message field:
+			getObjectDesc := getDesc.Output().Fields().ByName(objectFieldName)
+			if getObjectDesc == nil {
+				continue
+			}
+			if getObjectDesc.Cardinality() == protoreflect.Repeated {
+				continue
+			}
+			if getObjectDesc.Kind() != protoreflect.MessageKind {
+				continue
+			}
+
+			// This is a supported type if after the all the above checks it is the type of the
+			// `items` field of the list request and of the `object` field of the get response.
+			if listItemsDesc.Message() != getObjectDesc.Message() {
+				continue
+			}
+			objectDescs = append(objectDescs, listItemsDesc.Message())
+		}
+		return true
+	})
+	return objectDescs
 }
 
 func (c *runnerContext) analyzeDescriptors() error {
@@ -261,7 +363,7 @@ func (c *runnerContext) findListMethodDescs() error {
 	var err error
 
 	// Find the method:
-	c.listMethodDesc = c.serviceDesc.Methods().ByName(protoreflect.Name("List"))
+	c.listMethodDesc = c.serviceDesc.Methods().ByName(listMethodName)
 	if c.listMethodDesc == nil {
 		return fmt.Errorf("failed to find list method for service '%s'", c.serviceDesc.FullName())
 	}
@@ -275,7 +377,7 @@ func (c *runnerContext) findListMethodDescs() error {
 
 	// Find the items field of the response message:
 	responseDesc := c.listMethodDesc.Output()
-	c.listItemsFieldDesc = responseDesc.Fields().ByName("items")
+	c.listItemsFieldDesc = responseDesc.Fields().ByName(itemsFieldName)
 	if c.listItemsFieldDesc == nil {
 		return fmt.Errorf(
 			"failed to find items field for response type '%s' of list method of service '%s'",
@@ -296,7 +398,7 @@ func (c *runnerContext) findGetMethodDescs() error {
 	var err error
 
 	// Find the method:
-	c.getMethodDesc = c.serviceDesc.Methods().ByName(protoreflect.Name("Get"))
+	c.getMethodDesc = c.serviceDesc.Methods().ByName(getMethodName)
 	if c.getMethodDesc == nil {
 		return fmt.Errorf("failed to find get method for service '%s'", c.serviceDesc.FullName())
 	}
@@ -310,7 +412,7 @@ func (c *runnerContext) findGetMethodDescs() error {
 
 	// Find the identifier field of the request type:
 	requestDesc := c.getMethodDesc.Input()
-	c.getIdFieldDesc = requestDesc.Fields().ByName("id")
+	c.getIdFieldDesc = requestDesc.Fields().ByName(idFieldName)
 	if c.getIdFieldDesc == nil {
 		return fmt.Errorf(
 			"failed to find identifier field for request type '%s' of get method of service '%s'",
@@ -320,7 +422,7 @@ func (c *runnerContext) findGetMethodDescs() error {
 
 	// Find the object field of the response type:
 	responseDesc := c.getMethodDesc.Output()
-	c.getObjectFieldDesc = responseDesc.Fields().ByName("object")
+	c.getObjectFieldDesc = responseDesc.Fields().ByName(objectFieldName)
 	if c.getObjectFieldDesc == nil {
 		return fmt.Errorf(
 			"failed to find object field for response type '%s' of get method of service '%s'",
