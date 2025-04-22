@@ -20,3 +20,9 @@ columns:
 - header: STATE
   value: status.state
   type: fulfillment.v1.ClusterState
+
+- header: API URL
+  value: "has(status.api_url)? status.api_url: '-'"
+
+- header: CONSOLE URL
+  value: "has(status.console_url)? status.console_url: '-'"
