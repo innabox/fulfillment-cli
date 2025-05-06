@@ -81,6 +81,12 @@ func Cmd() *cobra.Command {
 		"",
 		"CEL expression used for filtering results.",
 	)
+	flags.BoolVar(
+		&runner.includeDeleted,
+		"include-deleted",
+		false,
+		"Include deleted objects.",
+	)
 	return result
 }
 
@@ -88,6 +94,7 @@ type runnerContext struct {
 	logger         *slog.Logger
 	format         string
 	filter         string
+	includeDeleted bool
 	conn           *grpc.ClientConn
 	marshalOptions protojson.MarshalOptions
 	helper         *reflection.ObjectHelper
@@ -210,6 +217,14 @@ func (c *runnerContext) list(ctx context.Context) (results []proto.Message, err 
 	var options reflection.ListOptions
 	if c.filter != "" {
 		options.Filter = c.filter
+	}
+	if !c.includeDeleted {
+		const notDeletedFilter = "!has(this.metadata.deletion_timestamp)"
+		if options.Filter != "" {
+			options.Filter = fmt.Sprintf("%s && (%s)", notDeletedFilter, options.Filter)
+		} else {
+			options.Filter = notDeletedFilter
+		}
 	}
 	results, err = c.helper.List(ctx, options)
 	return

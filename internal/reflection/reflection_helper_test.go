@@ -268,7 +268,7 @@ var _ = Describe("Reflection helper", func() {
 			// Use the helper to send the request, and verify the response:
 			objectHelper := helper.Lookup("cluster")
 			Expect(objectHelper).ToNot(BeNil())
-			items, err := objectHelper.List(ctx)
+			items, err := objectHelper.List(ctx, ListOptions{})
 			Expect(err).ToNot(HaveOccurred())
 			Expect(items).To(HaveLen(2))
 			Expect(proto.Equal(
