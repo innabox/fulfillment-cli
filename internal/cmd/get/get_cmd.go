@@ -75,12 +75,19 @@ func Cmd() *cobra.Command {
 			outputFormatTable, outputFormatJson, outputFormatYaml,
 		),
 	)
+	flags.StringVar(
+		&runner.filter,
+		"filter",
+		"",
+		"CEL expression used for filtering results.",
+	)
 	return result
 }
 
 type runnerContext struct {
 	logger         *slog.Logger
 	format         string
+	filter         string
 	conn           *grpc.ClientConn
 	marshalOptions protojson.MarshalOptions
 	helper         *reflection.ObjectHelper
@@ -200,7 +207,11 @@ func (c *runnerContext) get(ctx context.Context, ids []string) (results []proto.
 }
 
 func (c *runnerContext) list(ctx context.Context) (results []proto.Message, err error) {
-	results, err = c.helper.List(ctx)
+	var options reflection.ListOptions
+	if c.filter != "" {
+		options.Filter = c.filter
+	}
+	results, err = c.helper.List(ctx, options)
 	return
 }
 

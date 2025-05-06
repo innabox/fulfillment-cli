@@ -38,6 +38,7 @@ const (
 	updateMethodName = protoreflect.Name("Update")
 
 	// Fields:
+	filterFieldName = protoreflect.Name("filter")
 	idFieldName     = protoreflect.Name("id")
 	itemsFieldName  = protoreflect.Name("items")
 	objectFieldName = protoreflect.Name("object")
@@ -163,6 +164,12 @@ func (h *Helper) scanService(serviceDesc protoreflect.ServiceDescriptor) {
 	getResponseObjectFieldDesc := h.getObjectField(getDesc.Output())
 	objectDesc := getResponseObjectFieldDesc.Message()
 
+	// The request of the list method must have a `filter` field:
+	listRequestFilterFieldDesc := h.getFilterField(listDesc.Input())
+	if listRequestFilterFieldDesc == nil {
+		return
+	}
+
 	// The response of the list method must have an `items` field:
 	listResponseItemsFieldDesc := h.getItemsField(listDesc.Output())
 	if listResponseItemsFieldDesc == nil {
@@ -223,7 +230,8 @@ func (h *Helper) scanService(serviceDesc protoreflect.ServiceDescriptor) {
 				request:  listRequestTemplate,
 				response: listResponseTemplate,
 			},
-			items: listResponseItemsFieldDesc,
+			filter: listRequestFilterFieldDesc,
+			items:  listResponseItemsFieldDesc,
 		},
 		update: updateInfo{
 			methodInfo: methodInfo{
@@ -269,6 +277,20 @@ func (h *Helper) getObjectField(messageDesc protoreflect.MessageDescriptor) prot
 		return nil
 	}
 	if fieldDesc.Kind() != protoreflect.MessageKind {
+		return nil
+	}
+	return fieldDesc
+}
+
+func (h *Helper) getFilterField(messageDesc protoreflect.MessageDescriptor) protoreflect.FieldDescriptor {
+	fieldDesc := messageDesc.Fields().ByName(filterFieldName)
+	if fieldDesc == nil {
+		return nil
+	}
+	if fieldDesc.Cardinality() == protoreflect.Repeated {
+		return nil
+	}
+	if fieldDesc.Kind() != protoreflect.StringKind {
 		return nil
 	}
 	return fieldDesc
@@ -370,7 +392,8 @@ type getInfo struct {
 
 type listInfo struct {
 	methodInfo
-	items protoreflect.FieldDescriptor
+	filter protoreflect.FieldDescriptor
+	items  protoreflect.FieldDescriptor
 }
 
 type updateInfo struct {
@@ -400,8 +423,15 @@ func (h *ObjectHelper) String() string {
 	return string(h.descriptor.FullName())
 }
 
-func (h *ObjectHelper) List(ctx context.Context) (results []proto.Message, err error) {
+type ListOptions struct {
+	Filter string
+}
+
+func (h *ObjectHelper) List(ctx context.Context, options ListOptions) (results []proto.Message, err error) {
 	request := proto.Clone(h.list.request)
+	if options.Filter != "" {
+		request.ProtoReflect().Set(h.list.filter, protoreflect.ValueOfString(options.Filter))
+	}
 	response := proto.Clone(h.list.response)
 	err = h.parent.connection.Invoke(ctx, h.list.path, request, response)
 	if err != nil {
