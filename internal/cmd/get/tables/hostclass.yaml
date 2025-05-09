@@ -11,30 +11,14 @@
 # specific language governing permissions and limitations under the License.
 #
 
-version: v2
+full_name: fulfillment.v1.HostClass
+columns:
 
-managed:
-  enabled: true
-  override:
-  - file_option: go_package_prefix
-    value: github.com/innabox/fulfillment-cli/internal/api
-  disable:
-  - module: buf.build/googleapis/googleapis
-  - module: buf.build/grpc-ecosystem/grpc-gateway
+- header: ID
+  value: id
 
-inputs:
+- header: TITLE
+  value: title
 
-- module: buf.build/innabox/fulfillment-api:v0.0.7
-
-plugins:
-
-- remote: buf.build/protocolbuffers/go:v1.36.5
-  out: internal/api
-  opt:
-  - paths=source_relative
-  - default_api_level=API_HYBRID
-
-- remote: buf.build/grpc/go:v1.5.1
-  out: internal/api
-  opt:
-  - paths=source_relative
+- header: DESCRIPTION
+  value: description
