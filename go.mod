@@ -1,8 +1,6 @@
 module github.com/innabox/fulfillment-cli
 
-go 1.23.0
-
-toolchain go1.23.5
+go 1.24.5
 
 require (
 	github.com/gertd/go-pluralize v0.2.1
