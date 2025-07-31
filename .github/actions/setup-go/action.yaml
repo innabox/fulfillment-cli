@@ -12,25 +12,25 @@
 # the License.
 #
 
-name: Release
-
-on:
-  push:
-    tags:
-    - '*'
-
-jobs:
-
-  release:
-    name: Release
-    runs-on: ubuntu-latest
-    permissions:
-      contents: write
-    steps:
-    - uses: actions/checkout@v4
-    - uses: ./.github/actions/setup-go
-    - uses: goreleaser/goreleaser-action@v6
-      with:
-        args: release --clean
-      env:
-        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+name: Setup Go
+description: Install and Go and Ginkgo
+runs:
+  using: composite
+  steps:
+  - uses: actions/setup-go@v5
+    with:
+      go-version: '1.24.4'
+  - shell: bash
+    run: |
+      go mod download
+  - id: ginkgo-cache
+    uses: actions/cache@v4
+    with:
+      key: ginkgo
+      path: ~/go/bin/ginkgo
+  - if: steps.ginkgo-cache.outputs.cache-hit != 'true'
+    shell: bash
+    run: |
+      module="github.com/onsi/ginkgo/v2"
+      version=$(go list -f '{{ .Version }}' -m "${module}")
+      go install "${module}/ginkgo@${version}"
