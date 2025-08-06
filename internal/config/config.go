@@ -172,6 +172,19 @@ func (c *Config) Connect(ctx context.Context) (result *grpc.ClientConn, err erro
 		dialOpts = append(dialOpts, grpc.WithPerRPCCredentials(token))
 	}
 
+	// Add the logging interceptor:
+	loggingInterceptor, err := logging.NewInterceptor().
+		SetLogger(logger).
+		Build()
+	if err != nil {
+		return
+	}
+	dialOpts = append(
+		dialOpts,
+		grpc.WithUnaryInterceptor(loggingInterceptor.UnaryClient),
+		grpc.WithStreamInterceptor(loggingInterceptor.StreamClient),
+	)
+
 	result, err = grpc.NewClient(c.Address, dialOpts...)
 	return
 }
