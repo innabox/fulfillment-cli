@@ -132,7 +132,7 @@ func (c *runnerContext) run(cmd *cobra.Command, args []string) error {
 	}
 
 	// Create the gRPC connection from the configuration:
-	c.conn, err = cfg.Connect(ctx)
+	c.conn, err = cfg.Connect(ctx, cmd.Flags())
 	if err != nil {
 		return fmt.Errorf("failed to create gRPC connection: %w", err)
 	}

@@ -21,6 +21,8 @@ builds:
   - linux
   - windows
   - darwin
+  ldflags:
+  - -X github.com/innabox/fulfillment-cli/internal/version.id={{ .Version }}
 
 archives:
 - formats: [tar.gz]

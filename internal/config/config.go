@@ -24,6 +24,8 @@ import (
 	"github.com/innabox/fulfillment-cli/internal/auth"
 	"github.com/innabox/fulfillment-cli/internal/logging"
 	"github.com/innabox/fulfillment-cli/internal/packages"
+	"github.com/innabox/fulfillment-cli/internal/version"
+	"github.com/spf13/pflag"
 	"golang.org/x/oauth2"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials"
@@ -109,7 +111,7 @@ func Location() (result string, err error) {
 }
 
 // Connect creates a gRPC connection from the configuration.
-func (c *Config) Connect(ctx context.Context) (result *grpc.ClientConn, err error) {
+func (c *Config) Connect(ctx context.Context, flags *pflag.FlagSet) (result *grpc.ClientConn, err error) {
 	var dialOpts []grpc.DialOption
 
 	// Get the logger:
@@ -172,20 +174,37 @@ func (c *Config) Connect(ctx context.Context) (result *grpc.ClientConn, err erro
 		dialOpts = append(dialOpts, grpc.WithPerRPCCredentials(token))
 	}
 
-	// Add the logging interceptor:
-	loggingInterceptor, err := logging.NewInterceptor().
+	// Add the version interceptor:
+	versionInterceptor, err := version.NewInterceptor().
 		SetLogger(logger).
 		Build()
 	if err != nil {
 		return
 	}
+
+	// Add the logging interceptor:
+	loggingInterceptor, err := logging.NewInterceptor().
+		SetLogger(logger).
+		SetFlags(flags).
+		Build()
+	if err != nil {
+		return
+	}
+
+	// Create the connection:
 	dialOpts = append(
 		dialOpts,
-		grpc.WithUnaryInterceptor(loggingInterceptor.UnaryClient),
-		grpc.WithStreamInterceptor(loggingInterceptor.StreamClient),
+		grpc.WithChainUnaryInterceptor(
+			versionInterceptor.UnaryClient,
+			loggingInterceptor.UnaryClient,
+		),
+		grpc.WithChainStreamInterceptor(
+			versionInterceptor.StreamClient,
+			loggingInterceptor.StreamClient,
+		),
 	)
-
 	result, err = grpc.NewClient(c.Address, dialOpts...)
+
 	return
 }
 
