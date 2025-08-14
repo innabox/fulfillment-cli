@@ -28,6 +28,7 @@ import (
 	"github.com/innabox/fulfillment-cli/internal/cmd/get"
 	"github.com/innabox/fulfillment-cli/internal/cmd/login"
 	"github.com/innabox/fulfillment-cli/internal/cmd/logout"
+	"github.com/innabox/fulfillment-cli/internal/cmd/version"
 	"github.com/innabox/fulfillment-cli/internal/logging"
 	"github.com/innabox/fulfillment-cli/internal/terminal"
 )
@@ -54,6 +55,7 @@ func Root() *cobra.Command {
 	result.AddCommand(get.Cmd())
 	result.AddCommand(login.Cmd())
 	result.AddCommand(logout.Cmd())
+	result.AddCommand(version.Cmd())
 
 	return result
 }
