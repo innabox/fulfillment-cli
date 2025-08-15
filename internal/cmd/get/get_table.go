@@ -32,7 +32,7 @@ type Column struct {
 	Width int `yaml:"width,omitempty"`
 
 	// Value is a CEL expression that will be used to calculate the rendered value. The expression can access
-	// the message via the `message` built-in variable.
+	// the message via the `this` built-in variable.
 	Value string `yaml:"value,omitempty"`
 
 	// Type is the name of a enum type that is the result of evaluationg the expression. This is needed because

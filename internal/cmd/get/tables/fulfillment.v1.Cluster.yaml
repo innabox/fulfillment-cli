@@ -14,18 +14,18 @@
 columns:
 
 - header: ID
-  value: id
+  value: this.id
   width: 100
 
 - header: TEMPLATE
-  value: spec.template
+  value: this.spec.template
 
 - header: STATE
-  value: status.state
+  value: this.status.state
   type: fulfillment.v1.ClusterState
 
 - header: API URL
-  value: "has(status.api_url)? status.api_url: '-'"
+  value: "has(this.status.api_url)? this.status.api_url: '-'"
 
 - header: CONSOLE URL
-  value: "has(status.console_url)? status.console_url: '-'"
+  value: "has(this.status.console_url)? this.status.console_url: '-'"
