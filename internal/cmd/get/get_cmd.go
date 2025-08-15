@@ -29,6 +29,7 @@ import (
 	"github.com/google/cel-go/cel"
 	"github.com/google/cel-go/common/types"
 	"github.com/google/cel-go/common/types/ref"
+	"github.com/google/cel-go/ext"
 	"github.com/spf13/cobra"
 	"google.golang.org/grpc"
 	"google.golang.org/protobuf/encoding/protojson"
@@ -269,7 +270,7 @@ func (c *runnerContext) defaultTable() *Table {
 		Columns: []*Column{
 			{
 				Header: "ID",
-				Value:  "id",
+				Value:  "this.id",
 			},
 		},
 	}
@@ -295,15 +296,17 @@ func (c *runnerContext) renderTable(ctx context.Context, objects []proto.Message
 	if c.includeDeleted {
 		deletedCol := &Column{
 			Header: "DELETED",
-			Value:  "has(metadata.deletion_timestamp)? string(metadata.deletion_timestamp): '-'",
+			Value:  "has(this.metadata.deletion_timestamp)? string(this.metadata.deletion_timestamp): '-'",
 		}
 		table.Columns = slices.Insert(table.Columns, 1, deletedCol)
 	}
 
 	// Compile the CEL programs:
+	thisDesc := c.helper.Descriptor()
 	celEnv, err := cel.NewEnv(
-		cel.Types(dynamicpb.NewMessage(c.helper.Descriptor())),
-		cel.DeclareContextProto(c.helper.Descriptor()),
+		cel.Types(dynamicpb.NewMessage(thisDesc)),
+		cel.Variable("this", cel.ObjectType(string(thisDesc.FullName()))),
+		ext.Strings(),
 	)
 	if err != nil {
 		return fmt.Errorf("failed to create CEL environment: %w", err)
@@ -355,7 +358,11 @@ func (c *runnerContext) renderTableHeader(writer io.Writer, cols []*Column) erro
 
 func (c *runnerContext) renderTableRow(writer io.Writer, cols []*Column, prgs []cel.Program,
 	object proto.Message) error {
-	in, err := cel.ContextProtoVars(object)
+	// Wrap the object in a top-level "this" field to avoid conflicts with reserved words
+	in := map[string]any{
+		"this": object,
+	}
+	celVars, err := cel.PartialVars(in)
 	if err != nil {
 		return fmt.Errorf(
 			"failed to set variables for CEL expression for type '%s': %w",
@@ -372,7 +379,7 @@ func (c *runnerContext) renderTableRow(writer io.Writer, cols []*Column, prgs []
 		col := cols[i]
 		prg := prgs[i]
 		var out ref.Val
-		out, _, err = prg.Eval(in)
+		out, _, err = prg.Eval(celVars)
 		if err != nil {
 			return fmt.Errorf(
 				"failed to evaluate CEL expression '%s' for column '%s' of type '%s': %w",
