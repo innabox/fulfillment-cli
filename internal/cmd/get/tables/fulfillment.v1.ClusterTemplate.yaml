@@ -14,10 +14,10 @@
 columns:
 
 - header: ID
-  value: id
+  value: this.id
 
 - header: TITLE
-  value: title
+  value: this.title
 
 - header: DESCRIPTION
-  value: description
+  value: this.description
