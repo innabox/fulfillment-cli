@@ -11,31 +11,20 @@ Unless required by applicable law or agreed to in writing, software distributed 
 language governing permissions and limitations under the License.
 */
 
-package main
+package exit
 
-import (
-	"context"
-	"fmt"
-	"os"
+import "fmt"
 
-	"github.com/innabox/fulfillment-cli/internal/cmd"
-	"github.com/innabox/fulfillment-cli/internal/exit"
-)
+// Error is an error type that contains a process exit code. This is itended for situations where/ you want to call
+// os.Exit only in one place, but also want some deeply nested functions to decide what should be the exit code.
+type Error int
 
-func main() {
-	// Create a context:
-	ctx := context.Background()
+// Error is the implementation of the error interface.
+func (e Error) Error() string {
+	return fmt.Sprintf("%d", e)
+}
 
-	// Execute the main command:
-	root := cmd.Root()
-	err := root.ExecuteContext(ctx)
-	if err != nil {
-		exitErr, ok := err.(exit.Error)
-		if ok {
-			os.Exit(exitErr.Code())
-		} else {
-			fmt.Fprintf(os.Stderr, "Error: %s\n", err)
-			os.Exit(1)
-		}
-	}
+// Code returns the exit code.
+func (e Error) Code() int {
+	return int(e)
 }
