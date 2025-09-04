@@ -132,6 +132,8 @@ var _ = Describe("Reflection helper", func() {
 				"cluster",
 				"clustertemplate",
 				"hostclass",
+				"virtualmachinetemplate",
+				"virtualmachine",
 			))
 		})
 
@@ -140,6 +142,8 @@ var _ = Describe("Reflection helper", func() {
 				"clusters",
 				"clustertemplates",
 				"hostclasses",
+				"virtualmachinetemplates",
+				"virtualmachines",
 			))
 		})
 
@@ -195,6 +199,16 @@ var _ = Describe("Reflection helper", func() {
 				"Host class",
 				"hostclass",
 				"fulfillment.v1.HostClass",
+			),
+			Entry(
+				"Virtual machine template",
+				"virtualmachinetemplate",
+				"fulfillment.v1.VirtualMachineTemplate",
+			),
+			Entry(
+				"Virtual machine",
+				"virtualmachine",
+				"fulfillment.v1.VirtualMachine",
 			),
 		)
 
