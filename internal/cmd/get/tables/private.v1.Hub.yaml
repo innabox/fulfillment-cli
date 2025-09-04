@@ -14,4 +14,11 @@
 columns:
 
 - header: ID
-  value: id
+  value: this.id
+
+- header: NAMESPACE
+  value: this.namespace
+
+- header: KUBECONFIG
+  value: |
+    "%d bytes".format([size(this.kubeconfig)])
