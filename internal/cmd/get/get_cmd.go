@@ -31,6 +31,7 @@ import (
 	"github.com/google/cel-go/common/types/ref"
 	"github.com/google/cel-go/ext"
 	"github.com/innabox/fulfillment-common/logging"
+	"github.com/innabox/fulfillment-common/templating"
 	"github.com/spf13/cobra"
 	"google.golang.org/grpc"
 	"google.golang.org/protobuf/encoding/protojson"
@@ -43,9 +44,9 @@ import (
 
 	"github.com/innabox/fulfillment-cli/internal/cmd/get/kubeconfig"
 	"github.com/innabox/fulfillment-cli/internal/cmd/get/password"
+	"github.com/innabox/fulfillment-cli/internal/cmd/get/token"
 	"github.com/innabox/fulfillment-cli/internal/config"
 	"github.com/innabox/fulfillment-cli/internal/reflection"
-	"github.com/innabox/fulfillment-cli/internal/templating"
 	"github.com/innabox/fulfillment-cli/internal/terminal"
 )
 
@@ -75,6 +76,7 @@ func Cmd() *cobra.Command {
 	}
 	result.AddCommand(kubeconfig.Cmd())
 	result.AddCommand(password.Cmd())
+	result.AddCommand(token.Cmd())
 	flags := result.Flags()
 	flags.StringVarP(
 		&runner.format,
@@ -124,7 +126,7 @@ func (c *runnerContext) run(cmd *cobra.Command, args []string) error {
 	c.console = terminal.ConsoleFromContext(ctx)
 
 	// Get the configuration:
-	cfg, err := config.Load()
+	cfg, err := config.Load(ctx)
 	if err != nil {
 		return err
 	}

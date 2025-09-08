@@ -14,29 +14,82 @@ language governing permissions and limitations under the License.
 package login
 
 import (
+	"context"
+	"crypto/x509"
+	"embed"
+	"errors"
 	"fmt"
+	"log/slog"
 	"os"
+	"path/filepath"
+	"time"
+
+	"github.com/dustin/go-humanize"
+	"github.com/innabox/fulfillment-common/auth"
+	"github.com/innabox/fulfillment-common/logging"
+	"github.com/innabox/fulfillment-common/network"
+	"github.com/innabox/fulfillment-common/oauth"
+	"github.com/innabox/fulfillment-common/templating"
+	"github.com/spf13/cobra"
+	"github.com/spf13/pflag"
+	"google.golang.org/grpc"
+	healthv1 "google.golang.org/grpc/health/grpc_health_v1"
 
 	"github.com/innabox/fulfillment-cli/internal/config"
-	"github.com/spf13/cobra"
+	"github.com/innabox/fulfillment-cli/internal/terminal"
+	metadatav1 "github.com/innabox/fulfillment-common/api/metadata/v1"
 )
+
+//go:embed templates
+var templatesFS embed.FS
 
 func Cmd() *cobra.Command {
 	runner := &runnerContext{}
 	result := &cobra.Command{
-		Use:   "login [flags]",
-		Short: "Save connection and authentication details",
-		RunE:  runner.run,
+		Use:                   "login [FLAGS] ADDRESS",
+		DisableFlagsInUseLine: true,
+		Short:                 "Save connection and authentication details.",
+		RunE:                  runner.run,
 	}
 	flags := result.Flags()
+	flags.BoolVar(
+		&runner.args.plaintext,
+		"plaintext",
+		false,
+		"Disables use of TLS for communications with the API server.",
+	)
+	flags.BoolVar(
+		&runner.args.insecure,
+		"insecure",
+		false,
+		"Disables verification of TLS certificates and host names of the OAuth and API servers.",
+	)
+	flags.StringArrayVar(
+		&runner.args.caFiles,
+		"ca-file",
+		[]string{},
+		"File or directory containing trusted CA certificates.",
+	)
 	flags.StringVar(
-		&runner.token,
+		&runner.args.address,
+		"address",
+		os.Getenv("FULFILLMENT_SERVICE_ADDRESS"),
+		"Server address.",
+	)
+	flags.BoolVar(
+		&runner.args.private,
+		"private",
+		false,
+		"Enables use of the private API.",
+	)
+	flags.StringVar(
+		&runner.args.token,
 		"token",
 		os.Getenv("FULFILLMENT_SERVICE_TOKEN"),
 		"Authentication token",
 	)
 	flags.StringVar(
-		&runner.tokenScript,
+		&runner.args.tokenScript,
 		"token-script",
 		os.Getenv("FULFILLMENT_SERVICE_TOKEN_SCRIPT"),
 		"Shell command that will be executed to obtain the token. For example, to automatically get the "+
@@ -45,71 +98,376 @@ func Cmd() *cobra.Command {
 			"to quote this shell command correctly, as it will be passed to your shell for "+
 			"execution.",
 	)
-	flags.BoolVar(
-		&runner.plaintext,
-		"plaintext",
-		false,
-		"Disables use of TLS for communications",
-	)
-	flags.BoolVar(
-		&runner.insecure,
-		"insecure",
-		false,
-		"Disables verification of TLS certificates and host names",
+	flags.StringVar(
+		&runner.args.oauthIssuer,
+		"oauth-issuer",
+		"",
+		"OAuth issuer URL. This is optional. By default the first issuer advertised by the server is used.",
 	)
 	flags.StringVar(
-		&runner.address,
-		"address",
-		os.Getenv("FULFILLMENT_SERVICE_ADDRESS"),
-		"Server address",
+		&runner.args.oauthFlow,
+		"oauth-flow",
+		string(oauth.CodeFlow),
+		fmt.Sprintf(
+			"OAuth flow to use. Must be '%s', '%s' or '%s'.",
+			oauth.CodeFlow, oauth.DeviceFlow, oauth.CredentialsFlow,
+		),
 	)
-	flags.BoolVar(
-		&runner.private,
-		"private",
-		false,
-		"Enables use of the private API.",
+	flags.StringVar(
+		&runner.args.oauthClientId,
+		"oauth-client-id",
+		"fulfillment-cli",
+		"OAuth client identifier.",
 	)
+	flags.StringVar(
+		&runner.args.oauthClientSecret,
+		"oauth-client-secret",
+		"",
+		fmt.Sprintf(
+			"OAuth client secret. This is required for the '%s' flow.",
+			oauth.CredentialsFlow,
+		),
+	)
+	flags.StringSliceVar(
+		&runner.args.oauthScopes,
+		"oauth-scopes",
+		[]string{},
+		"Comma separated list of OAuth scopes to request.",
+	)
+	flags.MarkHidden("address")
 	flags.MarkHidden("private")
+	flags.MarkHidden("token")
+	flags.MarkHidden("token-script")
 	return result
 }
 
 type runnerContext struct {
-	token       string
-	tokenScript string
-	plaintext   bool
-	insecure    bool
-	address     string
-	private     bool
+	logger     *slog.Logger
+	console    *terminal.Console
+	flags      *pflag.FlagSet
+	engine     *templating.Engine
+	address    string
+	caPool     *x509.CertPool
+	tokenStore auth.TokenStore
+	args       struct {
+		plaintext         bool
+		insecure          bool
+		caFiles           []string
+		address           string
+		private           bool
+		token             string
+		tokenScript       string
+		oauthIssuer       string
+		oauthFlow         string
+		oauthClientId     string
+		oauthClientSecret string
+		oauthScopes       []string
+	}
 }
 
 func (c *runnerContext) run(cmd *cobra.Command, args []string) error {
-	// Load the configuration:
-	cfg, err := config.Load()
+	var err error
+
+	// Get the context:
+	ctx := cmd.Context()
+
+	// Get the logger, console and flags:
+	c.logger = logging.LoggerFromContext(ctx)
+	c.console = terminal.ConsoleFromContext(ctx)
+	c.flags = cmd.Flags()
+
+	// Create the templating engine:
+	c.engine, err = templating.NewEngine().
+		SetLogger(c.logger).
+		SetFS(templatesFS).
+		SetDir("templates").
+		Build()
 	if err != nil {
-		return fmt.Errorf("failed to load configuration: %w", err)
-	}
-	if cfg == nil {
-		cfg = &config.Config{}
+		return fmt.Errorf("failed to create templating engine: %w", err)
 	}
 
-	// Check mandatory parameters:
+	// The address used to be specified with a command line flag, but now we also take it from the arguments:
+	c.address = c.args.address
 	if c.address == "" {
-		return fmt.Errorf("address is mandatory")
+		if len(args) == 1 {
+			c.address = args[0]
+		} else {
+			return fmt.Errorf("address is mandatory")
+		}
 	}
 
-	// Update the configuration with the values given in the command line:
-	cfg.Token = c.token
-	cfg.TokenScript = c.tokenScript
-	cfg.Plaintext = c.plaintext
-	cfg.Insecure = c.insecure
-	cfg.Address = c.address
-	cfg.Private = c.private
+	// Create the CA pool:
+	c.caPool, err = network.NewCertPool().
+		SetLogger(c.logger).
+		AddSystemFiles(true).
+		AddKubernetesFiles(true).
+		AddFiles(c.args.caFiles...).
+		Build()
+	if err != nil {
+		return fmt.Errorf("failed to create CA pool: %w", err)
+	}
 
-	// Save the configuration:
+	// Create an anonymous gRPC client that we will use to fetch the metadata:
+	grpcConn, err := network.NewClient().
+		SetLogger(c.logger).
+		SetFlags(c.flags, network.GrpcClientName).
+		SetNetwork("tcp").
+		SetAddress(c.address).
+		SetInsecure(c.args.insecure).
+		SetCaPool(c.caPool).
+		Build()
+	if err != nil {
+		return fmt.Errorf("failed to create anonymous gRPC connection: %w", err)
+	}
+	defer func() {
+		if grpcConn != nil {
+			err := grpcConn.Close()
+			if err != nil {
+				c.logger.ErrorContext(
+					ctx,
+					"Failed to close gRPC connection",
+					slog.Any("error", err),
+				)
+			}
+		}
+	}()
+
+	// Fetch the metadata:
+	metadata, err := c.fetchMetadata(ctx, grpcConn)
+	if err != nil {
+		return fmt.Errorf("failed to fetch metadata: %w", err)
+	}
+	c.logger.DebugContext(
+		ctx,
+		"Fetched metadata",
+		slog.Any("metadata", metadata),
+	)
+
+	// Select the token issuer
+	tokenIssuer, err := c.selectTokenIssuer(ctx, metadata.GetAuthn())
+	if err != nil {
+		return fmt.Errorf("failed to select token issuer: %w", err)
+	}
+	c.logger.DebugContext(
+		ctx,
+		"Selected token issuer",
+		slog.String("issuer", tokenIssuer),
+	)
+
+	// Create an empty configuration and a token store that will load/save tokens from/to that configuration:
+	cfg := &config.Config{}
+	c.tokenStore = cfg.TokenStore()
+
+	// Create the token source:
+	tokenSource, err := c.createTokenSource(ctx, tokenIssuer)
+	if err != nil {
+		return fmt.Errorf("failed to create token source: %w", err)
+	}
+
+	// Try to obtain a token using the token source, as this will trigger the authentication flow and verify that
+	// it works correctly.
+	_, err = tokenSource.Token(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to obtain token: %w", err)
+	}
+
+	// Save the basic details of the configuration:
+	cfg.Plaintext = c.args.plaintext
+	cfg.Insecure = c.args.insecure
+	cfg.Address = c.address
+	cfg.Private = c.args.private
+
+	// For CA files that are absolute we need to store only the path, but for those that are relative we need to
+	// save the content because otherwise we will not be able to use them when the command is executed from a
+	// different directory.
+	for _, caFile := range c.args.caFiles {
+		if filepath.IsAbs(caFile) {
+			cfg.CaFiles = append(cfg.CaFiles, config.CaFile{
+				Name: caFile,
+			})
+		} else {
+			caContent, err := os.ReadFile(caFile)
+			if err != nil {
+				return fmt.Errorf("failed to read CA file '%s': %w", caFile, err)
+			}
+			cfg.CaFiles = append(cfg.CaFiles, config.CaFile{
+				Name:    caFile,
+				Content: string(caContent),
+			})
+		}
+	}
+
+	// Save the authenticatoin configuration. Note that the OAuth settings are only saved when they are actually
+	// used, and they won't be actually used if the user selected to use a static token or a token script.
+	if c.args.token == "" && c.args.tokenScript == "" {
+		cfg.OauthIssuer = tokenIssuer
+		cfg.OAuthFlow = oauth.Flow(c.args.oauthFlow)
+		cfg.OAuthClientId = c.args.oauthClientId
+		cfg.OAuthClientSecret = c.args.oauthClientSecret
+		cfg.OAuthScopes = c.args.oauthScopes
+	}
+
+	// Replace the gRPC anonymous connection with the authenticated one:
+	err = grpcConn.Close()
+	if err != nil {
+		return fmt.Errorf("failed to close anonymous gRPC connection: %w", err)
+	}
+	grpcConn, err = network.NewClient().
+		SetLogger(c.logger).
+		SetFlags(c.flags, network.GrpcClientName).
+		SetInsecure(c.args.insecure).
+		SetCaPool(c.caPool).
+		SetNetwork("tcp").
+		SetAddress(c.address).
+		SetTokenSource(tokenSource).
+		Build()
+	if err != nil {
+		return fmt.Errorf("failed to create authenticated gRPC connection: %w", err)
+	}
+
+	// Check if the configuration is working by invoking the health check method:
+	healthClient := healthv1.NewHealthClient(grpcConn)
+	healthResponse, err := healthClient.Check(ctx, &healthv1.HealthCheckRequest{})
+	if err != nil {
+		return err
+	}
+	if healthResponse.Status != healthv1.HealthCheckResponse_SERVING {
+		return fmt.Errorf("server is not serving, status is '%s'", healthResponse.Status)
+	}
+
+	// Everything is working, so we can save the configuration:
 	err = config.Save(cfg)
 	if err != nil {
 		return fmt.Errorf("failed to save configuration: %w", err)
 	}
 
+	return nil
+}
+
+func (c *runnerContext) fetchMetadata(ctx context.Context,
+	grpcConn *grpc.ClientConn) (result *metadatav1.MetadataGetResponse, err error) {
+	metadataClient := metadatav1.NewMetadataClient(grpcConn)
+	result, err = metadataClient.Get(ctx, metadatav1.MetadataGetRequest_builder{}.Build())
+	return
+}
+
+func (c *runnerContext) selectTokenIssuer(ctx context.Context, metadata *metadatav1.Authn) (result string, err error) {
+	advertisedIssuers := metadata.GetTrustedTokenIssuers()
+	if len(advertisedIssuers) > 0 {
+		result = advertisedIssuers[0]
+		if len(advertisedIssuers) > 1 {
+			c.logger.WarnContext(
+				ctx,
+				"Server advertises multiple issuers, selecting the first one",
+				slog.Any("advertised", advertisedIssuers),
+				slog.Any("selected", result),
+			)
+		}
+	} else {
+		err = errors.New("server advertises no issuers, and no issuer has been specified in the command line")
+	}
+	return
+}
+
+func (c *runnerContext) createTokenSource(ctx context.Context, tokenIssuer string) (result auth.TokenSource, err error) {
+	// Use a token if specified:
+	if c.args.token != "" {
+		result, err = auth.NewStaticTokenSource().
+			SetLogger(c.logger).
+			SetToken(&auth.Token{
+				Access: c.args.token,
+			}).
+			Build()
+		if err != nil {
+			err = fmt.Errorf("failed to create static token source: %w", err)
+		}
+		return
+	}
+
+	// Use a token script if specified::
+	if c.args.tokenScript != "" {
+		result, err = auth.NewScriptTokenSource().
+			SetLogger(c.logger).
+			SetScript(c.args.tokenScript).
+			SetStore(c.tokenStore).
+			Build()
+		if err != nil {
+			err = fmt.Errorf("failed to create script token source: %w", err)
+		}
+		return
+	}
+
+	// Finaly, if no token or token script has been specified, then use OAuth:
+	result, err = oauth.NewTokenSource().
+		SetLogger(c.logger).
+		SetStore(c.tokenStore).
+		SetListener(&oauthFlowListener{
+			runner: c,
+		}).
+		SetInsecure(c.args.insecure).
+		SetCaPool(c.caPool).
+		SetInteractive(true).
+		SetIssuer(tokenIssuer).
+		SetFlow(oauth.Flow(c.args.oauthFlow)).
+		SetClientId(c.args.oauthClientId).
+		SetClientSecret(c.args.oauthClientSecret).
+		SetScopes(c.args.oauthScopes...).
+		Build()
+	if err != nil {
+		err = fmt.Errorf("failed to create OAuth token source: %w", err)
+	}
+	return
+}
+
+type oauthFlowListener struct {
+	runner *runnerContext
+}
+
+func (l *oauthFlowListener) Start(ctx context.Context, event oauth.FlowStartEvent) error {
+	switch event.Flow {
+	case oauth.CodeFlow:
+		return l.startCodeFlow(ctx, event)
+	case oauth.DeviceFlow:
+		return l.startDeviceFlow(ctx, event)
+	default:
+		return fmt.Errorf(
+			"unsupported flow '%s', must be '%s' or '%s'",
+			event.Flow, oauth.CodeFlow, oauth.DeviceFlow,
+		)
+	}
+}
+
+func (l *oauthFlowListener) startCodeFlow(ctx context.Context, event oauth.FlowStartEvent) error {
+	l.runner.console.Render(ctx, l.runner.engine, "start_code_flow.txt", map[string]any{
+		"AuthorizationUri": event.AuthorizationUri,
+	})
+	return nil
+}
+
+func (l *oauthFlowListener) startDeviceFlow(ctx context.Context, event oauth.FlowStartEvent) error {
+	// If the authorizatoin server has provided a complete URL, with the code included, then use it, otherwise use
+	// the URL without the code:
+	verficationUri := event.VerificationUriComplete
+	if verficationUri == "" {
+		verficationUri = event.VerificationUri
+	}
+
+	// Calculate the expiration time to show to the user::
+	now := time.Now()
+	expiresIn := humanize.RelTime(now, now.Add(event.ExpiresIn), "from now", "")
+	l.runner.console.Render(ctx, l.runner.engine, "start_device_flow.txt", map[string]any{
+		"VerificationUri": verficationUri,
+		"UserCode":        event.UserCode,
+		"ExpiresIn":       expiresIn,
+	})
+	return nil
+}
+
+func (l *oauthFlowListener) End(ctx context.Context, event oauth.FlowEndEvent) error {
+	if event.Outcome {
+		l.runner.console.Render(ctx, l.runner.engine, "auth_success.txt", nil)
+	} else {
+		l.runner.console.Render(ctx, l.runner.engine, "auth_failure.txt", nil)
+	}
 	return nil
 }

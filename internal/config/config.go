@@ -15,38 +15,57 @@ package config
 
 import (
 	"context"
-	"crypto/tls"
+	"crypto/x509"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"log/slog"
 	"os"
 	"path/filepath"
+	"sync"
+	"time"
 
+	"github.com/innabox/fulfillment-common/auth"
 	"github.com/innabox/fulfillment-common/logging"
+	"github.com/innabox/fulfillment-common/network"
+	"github.com/innabox/fulfillment-common/oauth"
 	"github.com/spf13/pflag"
-	"golang.org/x/oauth2"
 	"google.golang.org/grpc"
-	"google.golang.org/grpc/credentials"
-	"google.golang.org/grpc/credentials/insecure"
-	"google.golang.org/grpc/credentials/oauth"
-	experimentalcredentials "google.golang.org/grpc/experimental/credentials"
 
-	"github.com/innabox/fulfillment-cli/internal/auth"
 	"github.com/innabox/fulfillment-cli/internal/packages"
 	"github.com/innabox/fulfillment-cli/internal/version"
 )
 
 // Config is the type used to store the configuration of the client.
 type Config struct {
-	Token       string `json:"token,omitempty"`
-	TokenScript string `json:"token_script"`
-	Plaintext   bool   `json:"plaintext,omitempty"`
-	Insecure    bool   `json:"insecure,omitempty"`
-	Address     string `json:"address,omitempty"`
-	Private     bool   `json:"packages,omitempty"`
+	TokenScript       string     `json:"token_script"`
+	Plaintext         bool       `json:"plaintext,omitempty"`
+	Insecure          bool       `json:"insecure,omitempty"`
+	CaFiles           []CaFile   `json:"ca_files,omitempty"`
+	Address           string     `json:"address,omitempty"`
+	Private           bool       `json:"packages,omitempty"`
+	AccessToken       string     `json:"access_token,omitempty"`
+	RefreshToken      string     `json:"refresh_token,omitempty"`
+	TokenExpiry       time.Time  `json:"token_expiry"`
+	OAuthFlow         oauth.Flow `json:"oauth_flow,omitempty"`
+	OauthIssuer       string     `json:"oauth_issuer,omitempty"`
+	OAuthClientId     string     `json:"oauth_client_id,omitempty"`
+	OAuthClientSecret string     `json:"oauth_client_secret,omitempty"`
+	OAuthScopes       []string   `json:"oauth_scopes,omitempty"`
+
+	caPool *x509.CertPool
+}
+
+// CaFile represents a CA certificate file with its name and optionally its content. The content is stored for relative
+// paths to allow the configuration to work when the tool is used from a different directory.
+type CaFile struct {
+	Name    string `json:"name,omitempty"`
+	Content string `json:"content,omitempty"`
 }
 
 // Load loads the configuration from the configuration file.
-func Load() (cfg *Config, err error) {
+func Load(ctx context.Context) (cfg *Config, err error) {
+	// Load the file:
 	file, err := Location()
 	if err != nil {
 		return
@@ -75,6 +94,14 @@ func Load() (cfg *Config, err error) {
 		err = fmt.Errorf("failed to parse config file '%s': %v", file, err)
 		return
 	}
+
+	// Create the CA pool:
+	err = cfg.createCaPool(ctx)
+	if err != nil {
+		err = fmt.Errorf("failed to create CA pool: %w", err)
+		return
+	}
+
 	return
 }
 
@@ -110,100 +137,102 @@ func Location() (result string, err error) {
 	return
 }
 
-// Connect creates a gRPC connection from the configuration.
-func (c *Config) Connect(ctx context.Context, flags *pflag.FlagSet) (result *grpc.ClientConn, err error) {
-	var dialOpts []grpc.DialOption
-
+// TokenSource creates a token source from the configuration.
+func (c *Config) TokenSource(ctx context.Context) (result auth.TokenSource, err error) {
 	// Get the logger:
 	logger := logging.LoggerFromContext(ctx)
 
-	// Configure use of TLS:
-	var transportCreds credentials.TransportCredentials
-	if c.Plaintext {
-		transportCreds = insecure.NewCredentials()
-	} else {
-		tlsConfig := &tls.Config{}
-		if c.Insecure {
-			tlsConfig.InsecureSkipVerify = true
+	// Get the token store:
+	tokenStore := c.TokenStore()
+
+	// If an OAuth flow has been configured, then use it to create a non interactive OAuth token source:
+	if c.OAuthFlow != "" {
+		result, err = oauth.NewTokenSource().
+			SetLogger(logger).
+			SetFlow(c.OAuthFlow).
+			SetInteractive(false).
+			SetIssuer(c.OauthIssuer).
+			SetClientId(c.OAuthClientId).
+			SetClientSecret(c.OAuthClientSecret).
+			SetScopes(c.OAuthScopes...).
+			SetInsecure(c.Insecure).
+			SetCaPool(c.caPool).
+			SetStore(tokenStore).
+			Build()
+		if err != nil {
+			err = fmt.Errorf("failed to create OAuth token source: %w", err)
 		}
-
-		// TODO: This should have been the non-experimental package, but we need to use this one because
-		// currently the OpenShift router doesn't seem to support ALPN, and the regular credentials package
-		// requires it since version 1.67. See here for details:
-		//
-		// https://github.com/grpc/grpc-go/issues/434
-		// https://github.com/grpc/grpc-go/pull/7980
-		//
-		// Is there a way to configure the OpenShift router to avoid this?
-		transportCreds = experimentalcredentials.NewTLSWithALPNDisabled(tlsConfig)
-	}
-	if transportCreds != nil {
-		dialOpts = append(dialOpts, grpc.WithTransportCredentials(transportCreds))
+		return
 	}
 
-	// Confgure use of token:
-	var tokenSource oauth2.TokenSource
+	// If a token script has been configured, then use it to create a script token source:
 	if c.TokenScript != "" {
-		tokenSource, err = auth.NewScriptTokenSource().
+		result, err = auth.NewScriptTokenSource().
 			SetLogger(logger).
 			SetScript(c.TokenScript).
-			SetTokenLoadFunc(func() (token string, err error) {
-				token = c.Token
-				return
-			}).
-			SetTokenSaveFunc(func(token string) error {
-				c.Token = token
-				return Save(c)
+			SetStore(tokenStore).
+			Build()
+		if err != nil {
+			err = fmt.Errorf("failed to create script token source: %w", err)
+		}
+		return
+	}
+
+	// Finally, if there is an access token try to use it:
+	if c.AccessToken != "" {
+		result, err = auth.NewStaticTokenSource().
+			SetLogger(logger).
+			SetToken(&auth.Token{
+				Access: c.AccessToken,
 			}).
 			Build()
 		if err != nil {
-			return
+			err = fmt.Errorf("failed to create static token source: %w", err)
 		}
-	} else if c.Token != "" {
-		token := &oauth2.Token{
-			AccessToken: c.Token,
-		}
-		tokenSource = oauth.TokenSource{
-			TokenSource: oauth2.StaticTokenSource(token),
-		}
-	}
-	if tokenSource != nil {
-		token := oauth.TokenSource{
-			TokenSource: tokenSource,
-		}
-		dialOpts = append(dialOpts, grpc.WithPerRPCCredentials(token))
+		return
 	}
 
-	// Add the version interceptor:
+	// If we are here then there is no way to get tokens, which is an error:
+	err = errors.New("no token source configured")
+	return
+}
+
+// Conect creates a gRPC connection from the configuration.
+func (c *Config) Connect(ctx context.Context, flags *pflag.FlagSet) (result *grpc.ClientConn, err error) {
+	// Get the logger:
+	logger := logging.LoggerFromContext(ctx)
+
+	// Create a token source:
+	tokenSource, err := c.TokenSource(ctx)
+	if err != nil {
+		err = fmt.Errorf("failed to create token source: %w", err)
+		return
+	}
+
+	// Create the version interceptor:
 	versionInterceptor, err := version.NewInterceptor().
 		SetLogger(logger).
 		Build()
 	if err != nil {
+		err = fmt.Errorf("failed to create version interceptor: %w", err)
 		return
 	}
 
-	// Add the logging interceptor:
-	loggingInterceptor, err := logging.NewInterceptor().
+	// Create the gRPC client:
+	result, err = network.NewClient().
 		SetLogger(logger).
-		SetFlags(flags).
+		SetInsecure(c.Insecure).
+		SetCaPool(c.caPool).
+		SetTokenSource(tokenSource).
+		SetNetwork("tcp").
+		SetAddress(c.Address).
+		AddUnaryInterceptor(versionInterceptor.UnaryClient).
+		AddStreamInterceptor(versionInterceptor.StreamClient).
 		Build()
 	if err != nil {
+		err = fmt.Errorf("failed to create gRPC client: %w", err)
 		return
 	}
-
-	// Create the connection:
-	dialOpts = append(
-		dialOpts,
-		grpc.WithChainUnaryInterceptor(
-			versionInterceptor.UnaryClient,
-			loggingInterceptor.UnaryClient,
-		),
-		grpc.WithChainStreamInterceptor(
-			versionInterceptor.StreamClient,
-			loggingInterceptor.StreamClient,
-		),
-	)
-	result, err = grpc.NewClient(c.Address, dialOpts...)
 
 	return
 }
@@ -215,4 +244,114 @@ func (c *Config) Packages() []string {
 		return packages.All
 	}
 	return packages.Public
+}
+
+// TokenStore returns an implementation of the auth.TokenStore interface that loads and saves tokens from/to
+// the configuration.
+func (c *Config) TokenStore() auth.TokenStore {
+	return &configTokenStore{
+		config: c,
+		lock:   &sync.RWMutex{},
+	}
+}
+
+// CaPool returns the CA pool from the configuration. If the CA pool is not set, it will be created and cached.
+func (c *Config) CaPool(ctx context.Context) (result *x509.CertPool, err error) {
+	if c.caPool != nil {
+		err = c.createCaPool(ctx)
+		if err != nil {
+			return
+		}
+	}
+	result = c.caPool
+	return
+}
+
+func (c *Config) createCaPool(ctx context.Context) error {
+	// Get the logger:
+	logger := logging.LoggerFromContext(ctx)
+
+	// Create a temporary directory for the CA files that we have content for. Those will usually be the CA files
+	// that were specified with relative paths when the configuration was saved. The rest of the CA files, the ones with
+	// absolute paths, will be loaded from the filesystem.
+	var (
+		contentFiles []CaFile
+		otherFiles   []string
+	)
+	for _, caFile := range c.CaFiles {
+		if caFile.Content != "" {
+			contentFiles = append(contentFiles, caFile)
+		} else {
+			otherFiles = append(otherFiles, caFile.Name)
+		}
+	}
+	contentDir, err := os.MkdirTemp("", "ca-*")
+	if err != nil {
+		return fmt.Errorf("failed to create temporary directory for CA files: %w", err)
+	}
+	defer func() {
+		err := os.RemoveAll(contentDir)
+		if err != nil {
+			logger.ErrorContext(
+				ctx,
+				"Failed to remove temporary directory for CA files",
+				slog.Any("error", err),
+			)
+		}
+	}()
+	for i, contentFile := range contentFiles {
+		contentName := fmt.Sprintf("%d-%s", i, filepath.Base(contentFile.Name))
+		contentPath := filepath.Join(contentDir, contentName)
+		err = os.WriteFile(contentPath, []byte(contentFile.Content), 0600)
+		if err != nil {
+			return fmt.Errorf("failed to write CA file to temporary directory: %w", err)
+		}
+	}
+
+	// Create the CA pool:
+	c.caPool, err = network.NewCertPool().
+		SetLogger(logger).
+		AddSystemFiles(true).
+		AddKubernetesFiles(true).
+		AddFile(contentDir).
+		AddFiles(otherFiles...).
+		Build()
+	return err
+}
+
+type configTokenStore struct {
+	config *Config
+	lock   *sync.RWMutex
+}
+
+func (s *configTokenStore) Load(ctx context.Context) (result *auth.Token, err error) {
+	s.lock.RLock()
+	defer s.lock.RUnlock()
+	if s.config.AccessToken == "" {
+		return
+	}
+	result = &auth.Token{
+		Access:  s.config.AccessToken,
+		Refresh: s.config.RefreshToken,
+		Expiry:  s.config.TokenExpiry,
+	}
+	return
+}
+
+func (s *configTokenStore) Save(ctx context.Context, token *auth.Token) error {
+	s.lock.Lock()
+	defer s.lock.Unlock()
+	if token == nil {
+		return errors.New("token cannot be nil")
+	}
+	accessChanged := s.config.AccessToken != token.Access
+	refreshChanged := s.config.RefreshToken != token.Refresh
+	expiryChanged := s.config.TokenExpiry != token.Expiry
+	if !accessChanged && !refreshChanged && !expiryChanged {
+		return nil
+	}
+	s.config.AccessToken = token.Access
+	s.config.RefreshToken = token.Refresh
+	s.config.TokenExpiry = token.Expiry
+	return Save(s.config)
 }

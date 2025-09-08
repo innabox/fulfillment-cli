@@ -27,6 +27,7 @@ import (
 
 	ffv1 "github.com/innabox/fulfillment-common/api/fulfillment/v1"
 	"github.com/innabox/fulfillment-common/logging"
+	"github.com/innabox/fulfillment-common/templating"
 	"github.com/spf13/cobra"
 	grpccodes "google.golang.org/grpc/codes"
 	grpcstatus "google.golang.org/grpc/status"
@@ -38,7 +39,6 @@ import (
 
 	"github.com/innabox/fulfillment-cli/internal/config"
 	"github.com/innabox/fulfillment-cli/internal/exit"
-	"github.com/innabox/fulfillment-cli/internal/templating"
 	"github.com/innabox/fulfillment-cli/internal/terminal"
 )
 
@@ -109,7 +109,7 @@ func (c *runnerContext) run(cmd *cobra.Command, args []string) error {
 	}
 
 	// Get the configuration:
-	cfg, err := config.Load()
+	cfg, err := config.Load(ctx)
 	if err != nil {
 		return err
 	}

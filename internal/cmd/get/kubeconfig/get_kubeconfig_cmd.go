@@ -20,6 +20,7 @@ import (
 	ffv1 "github.com/innabox/fulfillment-common/api/fulfillment/v1"
 	"github.com/innabox/fulfillment-common/logging"
 	"github.com/spf13/cobra"
+	"github.com/spf13/pflag"
 	"google.golang.org/grpc"
 
 	"github.com/innabox/fulfillment-cli/internal/config"
@@ -44,6 +45,7 @@ func Cmd() *cobra.Command {
 
 type runnerContext struct {
 	logger  *slog.Logger
+	flags   *pflag.FlagSet
 	cluster string
 	conn    *grpc.ClientConn
 }
@@ -56,9 +58,10 @@ func (c *runnerContext) run(cmd *cobra.Command, args []string) error {
 
 	// Get the logger and flags:
 	c.logger = logging.LoggerFromContext(ctx)
+	c.flags = cmd.Flags()
 
 	// Get the configuration:
-	cfg, err := config.Load()
+	cfg, err := config.Load(ctx)
 	if err != nil {
 		return err
 	}
@@ -67,7 +70,7 @@ func (c *runnerContext) run(cmd *cobra.Command, args []string) error {
 	}
 
 	// Create the gRPC connection from the configuration:
-	c.conn, err = cfg.Connect(ctx, cmd.Flags())
+	c.conn, err = cfg.Connect(ctx, c.flags)
 	if err != nil {
 		return fmt.Errorf("failed to create gRPC connection: %w", err)
 	}

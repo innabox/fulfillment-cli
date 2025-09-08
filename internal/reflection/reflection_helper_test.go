@@ -25,13 +25,12 @@ import (
 	"google.golang.org/protobuf/proto"
 
 	"github.com/innabox/fulfillment-cli/internal/testing"
-	. "github.com/innabox/fulfillment-cli/internal/testing"
 )
 
 var _ = Describe("Reflection helper", func() {
 	var (
 		ctx        context.Context
-		server     *Server
+		server     *testing.Server
 		connection *grpc.ClientConn
 	)
 
@@ -42,7 +41,7 @@ var _ = Describe("Reflection helper", func() {
 		ctx = context.Background()
 
 		// Create the server:
-		server = NewServer()
+		server = testing.NewServer()
 		DeferCleanup(server.Stop)
 
 		// Create the client connection:
@@ -134,8 +133,8 @@ var _ = Describe("Reflection helper", func() {
 				"host",
 				"hostclass",
 				"hostpool",
-				"virtualmachinetemplate",
 				"virtualmachine",
+				"virtualmachinetemplate",
 			))
 		})
 
@@ -143,11 +142,11 @@ var _ = Describe("Reflection helper", func() {
 			Expect(helper.Plurals()).To(ConsistOf(
 				"clusters",
 				"clustertemplates",
-				"hosts",
 				"hostclasses",
 				"hostpools",
-				"virtualmachinetemplates",
+				"hosts",
 				"virtualmachines",
+				"virtualmachinetemplates",
 			))
 		})
 
