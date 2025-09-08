@@ -22,6 +22,9 @@ import (
 	"os"
 	"strings"
 
+	"github.com/mattn/go-colorable"
+	json "github.com/neilotoole/jsoncolor"
+
 	"github.com/innabox/fulfillment-cli/internal/templating"
 )
 
@@ -108,5 +111,24 @@ func (c *Console) Render(ctx context.Context, engine *templating.Engine, templat
 			fmt.Fprintf(os.Stdout, "%s\n", line)
 			previousEmpty = false
 		}
+	}
+}
+
+func (c *Console) RenderJson(ctx context.Context, data any) {
+	var encoder *json.Encoder
+	if json.IsColorTerminal(os.Stdout) {
+		encoder = json.NewEncoder(colorable.NewColorable(os.Stdout))
+		encoder.SetColors(json.DefaultColors())
+	} else {
+		encoder = json.NewEncoder(os.Stdout)
+	}
+	encoder.SetIndent("", "  ")
+	err := encoder.Encode(data)
+	if err != nil {
+		c.logger.ErrorContext(
+			ctx,
+			"Failed to render JSON",
+			slog.Any("error", err),
+		)
 	}
 }

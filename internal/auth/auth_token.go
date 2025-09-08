@@ -11,16 +11,30 @@ Unless required by applicable law or agreed to in writing, software distributed 
 language governing permissions and limitations under the License.
 */
 
-package config
+package auth
 
 import (
-	"testing"
-
-	. "github.com/onsi/ginkgo/v2/dsl/core"
-	. "github.com/onsi/gomega"
+	"time"
 )
 
-func TestConfig(t *testing.T) {
-	RegisterFailHandler(Fail)
-	RunSpecs(t, "Config")
+// Token is a struct that represents a token that can be used to authenticate requests.
+type Token struct {
+	// Access is the access token.
+	Access string
+
+	// Refresh is the refresh token.
+	Refresh string
+
+	// Expiry is the expiry time of the token.
+	Expiry time.Time
+}
+
+// Valid returns true if the token is valid, false otherwise.
+func (t *Token) Valid() bool {
+	return !t.Expired()
+}
+
+// Expired returns true if the token is expired, false otherwise.
+func (t *Token) Expired() bool {
+	return !t.Expiry.IsZero() && time.Now().After(t.Expiry)
 }

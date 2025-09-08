@@ -43,6 +43,7 @@ import (
 
 	"github.com/innabox/fulfillment-cli/internal/cmd/get/kubeconfig"
 	"github.com/innabox/fulfillment-cli/internal/cmd/get/password"
+	"github.com/innabox/fulfillment-cli/internal/cmd/get/token"
 	"github.com/innabox/fulfillment-cli/internal/config"
 	"github.com/innabox/fulfillment-cli/internal/reflection"
 	"github.com/innabox/fulfillment-cli/internal/templating"
@@ -75,6 +76,7 @@ func Cmd() *cobra.Command {
 	}
 	result.AddCommand(kubeconfig.Cmd())
 	result.AddCommand(password.Cmd())
+	result.AddCommand(token.Cmd())
 	flags := result.Flags()
 	flags.StringVarP(
 		&runner.format,

@@ -9,6 +9,38 @@
                         "program": "${fileDirname}"
                 },
                 {
+                        "name": "login (code flow)",
+                        "type": "go",
+                        "request": "launch",
+                        "mode": "auto",
+                        "program": "${workspaceFolder}",
+                        "args": [
+                                "login",
+                                "--log-level=debug",
+                                "--log-file=stdout",
+                                "--insecure",
+                                "--address=localhost:8000",
+                                "--flow=code",
+                                "--issuer=https://keycloak.keycloak.svc.cluster.local:8001/realms/my_realm"
+                        ]
+                },
+                {
+                        "name": "login (device flow)",
+                        "type": "go",
+                        "request": "launch",
+                        "mode": "auto",
+                        "program": "${workspaceFolder}",
+                        "args": [
+                                "login",
+                                "--log-level=debug",
+                                "--log-file=stdout",
+                                "--insecure",
+                                "--address=localhost:8000",
+                                "--flow=device",
+                                "--issuer=https://keycloak.keycloak.svc.cluster.local:8001/realms/my_realm"
+                        ]
+                },
+                {
                         "name": "get",
                         "type": "go",
                         "request": "launch",
@@ -58,6 +90,16 @@
                         "program": "${workspaceFolder}",
                         "args": [
                                 "edit", "clustertemplate", "ocp_4_17_small"
+                        ]
+                },
+                {
+                        "name": "get token (RFC 3339)",
+                        "type": "go",
+                        "request": "launch",
+                        "mode": "auto",
+                        "program": "${workspaceFolder}",
+                        "args": [
+                                "get", "token", "--payload", "--rfc-3339"
                         ]
                 }
         ]

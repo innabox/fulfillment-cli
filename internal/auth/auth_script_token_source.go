@@ -15,6 +15,7 @@ package auth
 
 import (
 	"bytes"
+	"context"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -24,24 +25,21 @@ import (
 	"time"
 
 	"github.com/golang-jwt/jwt/v5"
-	"golang.org/x/oauth2"
 )
 
 // ScriptTokenSourceBuilder contains the logic needed to create a token source that executes an external script to
 // generate the token.
 type ScriptTokenSourceBuilder struct {
-	logger        *slog.Logger
-	script        string
-	loadTokenFunc func() (string, error)
-	saveTokenFunc func(string) error
+	logger *slog.Logger
+	script string
+	store  TokenStore
 }
 
 type scriptTokenSource struct {
-	logger        *slog.Logger
-	script        string
-	loadTokenFunc func() (string, error)
-	saveTokenFunc func(string) error
-	tokenParser   *jwt.Parser
+	logger      *slog.Logger
+	script      string
+	store       TokenStore
+	tokenParser *jwt.Parser
 }
 
 // NewScriptTokenSource creates a builder that can then be used to configure and create a token source that executes a
@@ -62,20 +60,14 @@ func (b *ScriptTokenSourceBuilder) SetScript(value string) *ScriptTokenSourceBui
 	return b
 }
 
-// SetTokenLoadFunc sets function that will be used to load the token from the storage. This mandatory.
-func (b *ScriptTokenSourceBuilder) SetTokenLoadFunc(value func() (string, error)) *ScriptTokenSourceBuilder {
-	b.loadTokenFunc = value
-	return b
-}
-
-// SetSavefunc sets function that will be used to save the token to the storage. This mandatory.
-func (b *ScriptTokenSourceBuilder) SetTokenSaveFunc(value func(string) error) *ScriptTokenSourceBuilder {
-	b.saveTokenFunc = value
+// SetStore sets the token store that will be used to load and save tokens. This is mandatory.
+func (b *ScriptTokenSourceBuilder) SetStore(value TokenStore) *ScriptTokenSourceBuilder {
+	b.store = value
 	return b
 }
 
 // Build uses the data stored in the builder to build a new script token source.
-func (b *ScriptTokenSourceBuilder) Build() (result oauth2.TokenSource, err error) {
+func (b *ScriptTokenSourceBuilder) Build() (result TokenSource, err error) {
 	// Check parameters:
 	if b.logger == nil {
 		err = errors.New("logger is mandatory")
@@ -85,12 +77,8 @@ func (b *ScriptTokenSourceBuilder) Build() (result oauth2.TokenSource, err error
 		err = errors.New("token generation script is mandatory")
 		return
 	}
-	if b.loadTokenFunc == nil {
-		err = errors.New("token load function is mandatory")
-		return
-	}
-	if b.saveTokenFunc == nil {
-		err = errors.New("token save function is mandatory")
+	if b.store == nil {
+		err = errors.New("token store is mandatory")
 		return
 	}
 
@@ -104,61 +92,55 @@ func (b *ScriptTokenSourceBuilder) Build() (result oauth2.TokenSource, err error
 
 	// Create and populate the object:
 	result = &scriptTokenSource{
-		logger:        b.logger,
-		script:        b.script,
-		loadTokenFunc: b.loadTokenFunc,
-		saveTokenFunc: b.saveTokenFunc,
-		tokenParser:   parser,
+		logger:      b.logger,
+		script:      b.script,
+		store:       b.store,
+		tokenParser: parser,
 	}
 	return
 }
 
-// Token is the implementation of the oauth2.TokenSource interface.
-func (s *scriptTokenSource) Token() (result *oauth2.Token, err error) {
-	// If there is no rawToken yet then we need to generate a new one.
-	rawToken, err := s.loadTokenFunc()
+// Token is the implementation of the TokenSource interface.
+func (s *scriptTokenSource) Token(ctx context.Context) (result *Token, err error) {
+	// Try to load an existing token first:
+	existingToken, err := s.store.Load(ctx)
 	if err != nil {
 		return
 	}
-	if rawToken == "" {
-		rawToken, err = s.generateToken()
-		if err != nil {
+
+	// If we have a token and it's still fresh, use it:
+	if existingToken != nil && existingToken.Access != "" {
+		// If the token has expired then we need to generate a new one. Note that if a token isn't a JWT we have no way
+		// to check the expiry date, so we don't save it for future use.
+		parsedToken, parseErr := s.parseToken(existingToken.Access)
+		if parseErr == nil && !parsedToken.Expiry.Before(time.Now()) {
+			result = parsedToken
 			return
 		}
 	}
 
-	// If the token has expired then we need to generate a new one. Note that if a token isn't a JWT we have no way
-	// to check the expiry date, so we don't save it for future use.
-	parsedToken, err := s.parseToken(rawToken)
-	if err != nil {
-		rawToken, err = s.generateToken()
-		if err != nil {
-			return
-		}
-		result = &oauth2.Token{
-			AccessToken: rawToken,
-		}
-		err = nil
-		return
-	}
-	if parsedToken.Expiry.Before(time.Now()) {
-		rawToken, err = s.generateToken()
-		if err != nil {
-			return
-		}
-		parsedToken, err = s.parseToken(rawToken)
-		if err != nil {
-			result = &oauth2.Token{
-				AccessToken: rawToken,
-			}
-			err = nil
-			return
-		}
-	}
-	err = s.saveTokenFunc(rawToken)
+	// Generate a new token:
+	rawToken, err := s.generateToken()
 	if err != nil {
 		return
 	}
+
+	// Try to parse the token to get expiry information:
+	parsedToken, parseErr := s.parseToken(rawToken)
+	if parseErr != nil {
+		// If we can't parse it as a JWT, just return it as-is without saving:
+		result = &Token{
+			Access: rawToken,
+		}
+		return
+	}
+
+	// Save the parsed token to storage:
+	err = s.store.Save(ctx, parsedToken)
+	if err != nil {
+		return
+	}
+
 	result = parsedToken
 	return
 }
@@ -187,7 +169,7 @@ func (s *scriptTokenSource) generateToken() (result string, err error) {
 	return
 }
 
-func (s *scriptTokenSource) parseToken(tokenText string) (result *oauth2.Token, err error) {
+func (s *scriptTokenSource) parseToken(tokenText string) (result *Token, err error) {
 	tokenClaims := jwt.MapClaims{}
 	_, _, err = s.tokenParser.ParseUnverified(tokenText, tokenClaims)
 	if err != nil {
@@ -197,9 +179,9 @@ func (s *scriptTokenSource) parseToken(tokenText string) (result *oauth2.Token, 
 	if err != nil {
 		return
 	}
-	result = &oauth2.Token{
-		AccessToken: tokenText,
-		Expiry:      tokenEpirationTime.Time,
+	result = &Token{
+		Access: tokenText,
+		Expiry: tokenEpirationTime.Time,
 	}
 	return
 }
