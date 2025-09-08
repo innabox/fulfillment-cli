@@ -9,6 +9,65 @@
                         "program": "${fileDirname}"
                 },
                 {
+                        "name": "login (token script)",
+                        "type": "go",
+                        "request": "launch",
+                        "mode": "auto",
+                        "program": "${workspaceFolder}",
+                        "args": [
+                                "login",
+                                "--log-level=debug",
+                                "--log-file=stdout",
+                                "--insecure",
+                                "--token-script=kubectl create token -n innabox client",
+                                "localhost:8000"
+                        ]
+                },
+                {
+                        "name": "login (oauth code flow)",
+                        "type": "go",
+                        "request": "launch",
+                        "mode": "auto",
+                        "program": "${workspaceFolder}",
+                        "args": [
+                                "login",
+                                "--log-level=debug",
+                                "--log-file=stdout",
+                                "--insecure",
+                                "--oauth-flow=code",
+                                "localhost:8000"
+                        ]
+                },
+                {
+                        "name": "login (oauth device flow)",
+                        "type": "go",
+                        "request": "launch",
+                        "mode": "auto",
+                        "program": "${workspaceFolder}",
+                        "args": [
+                                "login",
+                                "--log-level=debug",
+                                "--log-file=stdout",
+                                "--insecure",
+                                "--oauth-flow=device",
+                                "localhost:8000"
+                        ]
+                },
+                {
+                        "name": "login (CA file)",
+                        "type": "go",
+                        "request": "launch",
+                        "mode": "auto",
+                        "program": "${workspaceFolder}",
+                        "args": [
+                                "login",
+                                "--log-level=debug",
+                                "--log-file=stdout",
+                                "--ca-file=bundle.pem",
+                                "localhost:8000"
+                        ]
+                },
+                {
                         "name": "get",
                         "type": "go",
                         "request": "launch",
@@ -58,6 +117,16 @@
                         "program": "${workspaceFolder}",
                         "args": [
                                 "edit", "clustertemplate", "ocp_4_17_small"
+                        ]
+                },
+                {
+                        "name": "get token (RFC 3339)",
+                        "type": "go",
+                        "request": "launch",
+                        "mode": "auto",
+                        "program": "${workspaceFolder}",
+                        "args": [
+                                "get", "token", "--payload", "--rfc-3339"
                         ]
                 }
         ]

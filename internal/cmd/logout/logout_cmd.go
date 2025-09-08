@@ -15,8 +15,10 @@ package logout
 
 import (
 	"fmt"
+	"time"
 
 	"github.com/innabox/fulfillment-cli/internal/config"
+	"github.com/innabox/fulfillment-common/oauth"
 	"github.com/spf13/cobra"
 )
 
@@ -34,8 +36,11 @@ type runnerContext struct {
 }
 
 func (c *runnerContext) run(cmd *cobra.Command, args []string) error {
+	// Get the context:
+	ctx := cmd.Context()
+
 	// Load the configuration:
-	cfg, err := config.Load()
+	cfg, err := config.Load(ctx)
 	if err != nil {
 		return fmt.Errorf("failed to load configuration: %w", err)
 	}
@@ -44,10 +49,17 @@ func (c *runnerContext) run(cmd *cobra.Command, args []string) error {
 	}
 
 	// Clear all the details:
-	cfg.Token = ""
+	cfg.AccessToken = ""
 	cfg.Plaintext = false
 	cfg.Insecure = false
 	cfg.Address = ""
+	cfg.RefreshToken = ""
+	cfg.TokenExpiry = time.Time{}
+	cfg.OAuthFlow = oauth.Flow("")
+	cfg.OauthIssuer = ""
+	cfg.OAuthClientId = ""
+	cfg.OAuthClientSecret = ""
+	cfg.OAuthScopes = nil
 
 	// Save the configuration:
 	err = config.Save(cfg)

@@ -55,7 +55,7 @@ func (c *runnerContext) run(cmd *cobra.Command, args []string) error {
 	ctx := cmd.Context()
 
 	// Get the configuration:
-	cfg, err := config.Load()
+	cfg, err := config.Load(ctx)
 	if err != nil {
 		return err
 	}
