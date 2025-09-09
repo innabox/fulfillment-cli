@@ -19,9 +19,9 @@ import (
 	"strings"
 	"text/tabwriter"
 
+	ffv1 "github.com/innabox/fulfillment-common/api/fulfillment/v1"
 	"github.com/spf13/cobra"
 
-	ffv1 "github.com/innabox/fulfillment-cli/internal/api/fulfillment/v1"
 	"github.com/innabox/fulfillment-cli/internal/config"
 )
 

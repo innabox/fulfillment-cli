@@ -21,18 +21,18 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/innabox/fulfillment-cli/internal/auth"
-	"github.com/innabox/fulfillment-cli/internal/logging"
-	"github.com/innabox/fulfillment-cli/internal/packages"
-	"github.com/innabox/fulfillment-cli/internal/version"
+	"github.com/innabox/fulfillment-common/logging"
 	"github.com/spf13/pflag"
 	"golang.org/x/oauth2"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials"
 	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/grpc/credentials/oauth"
-
 	experimentalcredentials "google.golang.org/grpc/experimental/credentials"
+
+	"github.com/innabox/fulfillment-cli/internal/auth"
+	"github.com/innabox/fulfillment-cli/internal/packages"
+	"github.com/innabox/fulfillment-cli/internal/version"
 )
 
 // Config is the type used to store the configuration of the client.

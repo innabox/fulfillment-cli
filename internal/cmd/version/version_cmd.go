@@ -14,9 +14,10 @@ language governing permissions and limitations under the License.
 package version
 
 import (
+	"github.com/spf13/cobra"
+
 	"github.com/innabox/fulfillment-cli/internal/terminal"
 	"github.com/innabox/fulfillment-cli/internal/version"
-	"github.com/spf13/cobra"
 )
 
 func Cmd() *cobra.Command {

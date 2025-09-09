@@ -17,12 +17,12 @@ import (
 	"fmt"
 	"log/slog"
 
+	ffv1 "github.com/innabox/fulfillment-common/api/fulfillment/v1"
+	"github.com/innabox/fulfillment-common/logging"
 	"github.com/spf13/cobra"
 	"google.golang.org/grpc"
 
-	ffv1 "github.com/innabox/fulfillment-cli/internal/api/fulfillment/v1"
 	"github.com/innabox/fulfillment-cli/internal/config"
-	"github.com/innabox/fulfillment-cli/internal/logging"
 )
 
 func Cmd() *cobra.Command {

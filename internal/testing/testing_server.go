@@ -17,12 +17,11 @@ import (
 	"context"
 	"net"
 
+	ffv1 "github.com/innabox/fulfillment-common/api/fulfillment/v1"
 	. "github.com/onsi/ginkgo/v2/dsl/core"
 	. "github.com/onsi/gomega"
 	"google.golang.org/genproto/googleapis/api/httpbody"
 	"google.golang.org/grpc"
-
-	ffv1 "github.com/innabox/fulfillment-cli/internal/api/fulfillment/v1"
 )
 
 // Server is a gRPC server used only for tests.

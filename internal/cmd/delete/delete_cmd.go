@@ -19,11 +19,11 @@ import (
 	"log/slog"
 	"os"
 
+	"github.com/innabox/fulfillment-common/logging"
 	"github.com/spf13/cobra"
 	"google.golang.org/grpc"
 
 	"github.com/innabox/fulfillment-cli/internal/config"
-	"github.com/innabox/fulfillment-cli/internal/logging"
 	"github.com/innabox/fulfillment-cli/internal/reflection"
 	"github.com/innabox/fulfillment-cli/internal/templating"
 	"github.com/innabox/fulfillment-cli/internal/terminal"
