@@ -30,6 +30,7 @@ import (
 
 	"github.com/innabox/fulfillment-cli/internal/cmd/create/cluster"
 	"github.com/innabox/fulfillment-cli/internal/cmd/create/hub"
+	"github.com/innabox/fulfillment-cli/internal/cmd/create/virtualmachine"
 	"github.com/innabox/fulfillment-cli/internal/config"
 	"github.com/innabox/fulfillment-cli/internal/logging"
 	"github.com/innabox/fulfillment-cli/internal/reflection"
@@ -44,6 +45,7 @@ func Cmd() *cobra.Command {
 	}
 	result.AddCommand(cluster.Cmd())
 	result.AddCommand(hub.Cmd())
+	result.AddCommand(virtualmachine.Cmd())
 	flags := result.Flags()
 	flags.StringVarP(
 		&runner.fileName,
