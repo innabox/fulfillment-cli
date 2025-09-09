@@ -24,6 +24,7 @@ import (
 	"os/exec"
 	"path/filepath"
 
+	"github.com/innabox/fulfillment-common/logging"
 	"github.com/spf13/cobra"
 	"google.golang.org/grpc"
 	"google.golang.org/protobuf/encoding/protojson"
@@ -31,7 +32,6 @@ import (
 	"gopkg.in/yaml.v3"
 
 	"github.com/innabox/fulfillment-cli/internal/config"
-	"github.com/innabox/fulfillment-cli/internal/logging"
 	"github.com/innabox/fulfillment-cli/internal/reflection"
 	"github.com/innabox/fulfillment-cli/internal/templating"
 	"github.com/innabox/fulfillment-cli/internal/terminal"

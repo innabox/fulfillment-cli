@@ -21,6 +21,7 @@ import (
 	"log/slog"
 	"os"
 
+	"github.com/innabox/fulfillment-common/logging"
 	"github.com/spf13/cobra"
 	"google.golang.org/grpc"
 	"google.golang.org/protobuf/encoding/protojson"
@@ -32,7 +33,6 @@ import (
 	"github.com/innabox/fulfillment-cli/internal/cmd/create/hub"
 	"github.com/innabox/fulfillment-cli/internal/cmd/create/virtualmachine"
 	"github.com/innabox/fulfillment-cli/internal/config"
-	"github.com/innabox/fulfillment-cli/internal/logging"
 	"github.com/innabox/fulfillment-cli/internal/reflection"
 )
 

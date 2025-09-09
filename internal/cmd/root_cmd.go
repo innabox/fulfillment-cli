@@ -19,6 +19,7 @@ import (
 	"os"
 	"path/filepath"
 
+	"github.com/innabox/fulfillment-common/logging"
 	"github.com/spf13/cobra"
 
 	"github.com/innabox/fulfillment-cli/internal/cmd/create"
@@ -29,7 +30,6 @@ import (
 	"github.com/innabox/fulfillment-cli/internal/cmd/login"
 	"github.com/innabox/fulfillment-cli/internal/cmd/logout"
 	"github.com/innabox/fulfillment-cli/internal/cmd/version"
-	"github.com/innabox/fulfillment-cli/internal/logging"
 	"github.com/innabox/fulfillment-cli/internal/terminal"
 )
 

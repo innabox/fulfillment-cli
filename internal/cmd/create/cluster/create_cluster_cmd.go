@@ -25,6 +25,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/innabox/fulfillment-common/logging"
 	"github.com/spf13/cobra"
 	grpccodes "google.golang.org/grpc/codes"
 	grpcstatus "google.golang.org/grpc/status"
@@ -34,12 +35,11 @@ import (
 	"google.golang.org/protobuf/types/known/timestamppb"
 	"google.golang.org/protobuf/types/known/wrapperspb"
 
-	ffv1 "github.com/innabox/fulfillment-cli/internal/api/fulfillment/v1"
 	"github.com/innabox/fulfillment-cli/internal/config"
 	"github.com/innabox/fulfillment-cli/internal/exit"
-	"github.com/innabox/fulfillment-cli/internal/logging"
 	"github.com/innabox/fulfillment-cli/internal/templating"
 	"github.com/innabox/fulfillment-cli/internal/terminal"
+	ffv1 "github.com/innabox/fulfillment-common/api/fulfillment/v1"
 )
 
 //go:embed templates

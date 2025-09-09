@@ -39,19 +39,6 @@ jobs:
         gofmt -s -l -w .
         git diff --exit-code
 
-  check-generated-code:
-    name: Check generated code
-    runs-on: ubuntu-latest
-    steps:
-    - uses: actions/checkout@v5
-    - uses: bufbuild/buf-action@v1
-      with:
-        version: '1.50.0'
-        setup_only: true
-    - run: |
-        buf generate
-        git diff --exit-code
-
   run-unit-tests:
     name: Run unit tests
     runs-on: ubuntu-latest

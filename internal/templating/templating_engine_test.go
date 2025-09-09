@@ -18,12 +18,12 @@ import (
 	"os"
 
 	"github.com/google/uuid"
+	"github.com/innabox/fulfillment-common/text"
 	. "github.com/onsi/ginkgo/v2/dsl/core"
 	. "github.com/onsi/ginkgo/v2/dsl/table"
 	. "github.com/onsi/gomega"
 
 	. "github.com/innabox/fulfillment-cli/internal/testing"
-	"github.com/innabox/fulfillment-cli/internal/text"
 )
 
 var _ = Describe("Engine", func() {

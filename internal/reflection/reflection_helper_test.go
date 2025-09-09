@@ -16,6 +16,7 @@ package reflection
 import (
 	"context"
 
+	ffv1 "github.com/innabox/fulfillment-common/api/fulfillment/v1"
 	. "github.com/onsi/ginkgo/v2/dsl/core"
 	. "github.com/onsi/ginkgo/v2/dsl/table"
 	. "github.com/onsi/gomega"
@@ -23,7 +24,6 @@ import (
 	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/protobuf/proto"
 
-	ffv1 "github.com/innabox/fulfillment-cli/internal/api/fulfillment/v1"
 	"github.com/innabox/fulfillment-cli/internal/testing"
 	. "github.com/innabox/fulfillment-cli/internal/testing"
 )
