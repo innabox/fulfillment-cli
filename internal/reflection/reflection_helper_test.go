@@ -131,9 +131,11 @@ var _ = Describe("Reflection helper", func() {
 			Expect(helper.Singulars()).To(ConsistOf(
 				"cluster",
 				"clustertemplate",
+				"host",
 				"hostclass",
-				"virtualmachinetemplate",
+				"hostpool",
 				"virtualmachine",
+				"virtualmachinetemplate",
 			))
 		})
 
@@ -142,8 +144,10 @@ var _ = Describe("Reflection helper", func() {
 				"clusters",
 				"clustertemplates",
 				"hostclasses",
-				"virtualmachinetemplates",
+				"hostpools",
+				"hosts",
 				"virtualmachines",
+				"virtualmachinetemplates",
 			))
 		})
 

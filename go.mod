@@ -7,7 +7,7 @@ require (
 	github.com/golang-jwt/jwt/v5 v5.2.2
 	github.com/google/cel-go v0.26.1
 	github.com/google/uuid v1.6.0
-	github.com/innabox/fulfillment-common v0.0.1
+	github.com/innabox/fulfillment-common v0.0.2
 	github.com/onsi/ginkgo/v2 v2.25.3
 	github.com/onsi/gomega v1.38.2
 	github.com/spf13/cobra v1.9.1
