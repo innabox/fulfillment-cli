@@ -131,7 +131,9 @@ var _ = Describe("Reflection helper", func() {
 			Expect(helper.Singulars()).To(ConsistOf(
 				"cluster",
 				"clustertemplate",
+				"host",
 				"hostclass",
+				"hostpool",
 				"virtualmachinetemplate",
 				"virtualmachine",
 			))
@@ -141,7 +143,9 @@ var _ = Describe("Reflection helper", func() {
 			Expect(helper.Plurals()).To(ConsistOf(
 				"clusters",
 				"clustertemplates",
+				"hosts",
 				"hostclasses",
+				"hostpools",
 				"virtualmachinetemplates",
 				"virtualmachines",
 			))
@@ -173,6 +177,26 @@ var _ = Describe("Reflection helper", func() {
 				"Host class in plural",
 				"hostclasses",
 				"fulfillment.v1.HostClass",
+			),
+			Entry(
+				"Host in singular",
+				"host",
+				"fulfillment.v1.Host",
+			),
+			Entry(
+				"Host in plural",
+				"hosts",
+				"fulfillment.v1.Host",
+			),
+			Entry(
+				"Host pool in singular",
+				"hostpool",
+				"fulfillment.v1.HostPool",
+			),
+			Entry(
+				"Host pool in plural",
+				"hostpools",
+				"fulfillment.v1.HostPool",
 			),
 		)
 
@@ -210,6 +234,16 @@ var _ = Describe("Reflection helper", func() {
 				"virtualmachine",
 				"fulfillment.v1.VirtualMachine",
 			),
+			Entry(
+				"Host",
+				"host",
+				"fulfillment.v1.Host",
+			),
+			Entry(
+				"Host pool",
+				"hostpool",
+				"fulfillment.v1.HostPool",
+			),
 		)
 
 		DescribeTable(
@@ -234,6 +268,16 @@ var _ = Describe("Reflection helper", func() {
 				"Host class",
 				"hostclass",
 				&ffv1.HostClass{},
+			),
+			Entry(
+				"Host",
+				"host",
+				&ffv1.Host{},
+			),
+			Entry(
+				"Host pool",
+				"hostpool",
+				&ffv1.HostPool{},
 			),
 		)
 
@@ -472,6 +516,120 @@ var _ = Describe("Reflection helper", func() {
 			objectHelper := helper.Lookup("cluster")
 			Expect(objectHelper).ToNot(BeNil())
 			err := objectHelper.Delete(ctx, "123")
+			Expect(err).ToNot(HaveOccurred())
+		})
+
+		It("Invokes hosts get method", func() {
+			// Register a hosts server that responds to the get request:
+			ffv1.RegisterHostsServer(server.Registrar(), &testing.HostsServerFuncs{
+				GetFunc: func(ctx context.Context, request *ffv1.HostsGetRequest,
+				) (response *ffv1.HostsGetResponse, err error) {
+					defer GinkgoRecover()
+					Expect(request.GetId()).To(Equal("host-123"))
+					response = ffv1.HostsGetResponse_builder{
+						Object: ffv1.Host_builder{
+							Id: "host-123",
+							Status: ffv1.HostStatus_builder{
+								PowerState: ffv1.HostPowerState_HOST_POWER_STATE_ON,
+							}.Build(),
+						}.Build(),
+					}.Build()
+					return
+				},
+			})
+
+			// Start the server:
+			server.Start()
+
+			// Use the helper to send the request, and verify the response:
+			objectHelper := helper.Lookup("host")
+			Expect(objectHelper).ToNot(BeNil())
+			object, err := objectHelper.Get(ctx, "host-123")
+			Expect(err).ToNot(HaveOccurred())
+			Expect(proto.Equal(object, ffv1.Host_builder{
+				Id: "host-123",
+				Status: ffv1.HostStatus_builder{
+					PowerState: ffv1.HostPowerState_HOST_POWER_STATE_ON,
+				}.Build(),
+			}.Build())).To(BeTrue())
+		})
+
+		It("Invokes hosts delete method", func() {
+			// Register a hosts server that responds to the delete request:
+			ffv1.RegisterHostsServer(server.Registrar(), &testing.HostsServerFuncs{
+				DeleteFunc: func(ctx context.Context, request *ffv1.HostsDeleteRequest,
+				) (response *ffv1.HostsDeleteResponse, err error) {
+					defer GinkgoRecover()
+					Expect(request.GetId()).To(Equal("host-123"))
+					response = ffv1.HostsDeleteResponse_builder{}.Build()
+					return
+				},
+			})
+
+			// Start the server:
+			server.Start()
+
+			// Use the helper to send the request, and verify the response:
+			objectHelper := helper.Lookup("host")
+			Expect(objectHelper).ToNot(BeNil())
+			err := objectHelper.Delete(ctx, "host-123")
+			Expect(err).ToNot(HaveOccurred())
+		})
+
+		It("Invokes host pools get method", func() {
+			// Register a host pools server that responds to the get request:
+			ffv1.RegisterHostPoolsServer(server.Registrar(), &testing.HostPoolsServerFuncs{
+				GetFunc: func(ctx context.Context, request *ffv1.HostPoolsGetRequest,
+				) (response *ffv1.HostPoolsGetResponse, err error) {
+					defer GinkgoRecover()
+					Expect(request.GetId()).To(Equal("pool-123"))
+					response = ffv1.HostPoolsGetResponse_builder{
+						Object: ffv1.HostPool_builder{
+							Id: "pool-123",
+							Status: ffv1.HostPoolStatus_builder{
+								State: ffv1.HostPoolState_HOST_POOL_STATE_READY,
+							}.Build(),
+						}.Build(),
+					}.Build()
+					return
+				},
+			})
+
+			// Start the server:
+			server.Start()
+
+			// Use the helper to send the request, and verify the response:
+			objectHelper := helper.Lookup("hostpool")
+			Expect(objectHelper).ToNot(BeNil())
+			object, err := objectHelper.Get(ctx, "pool-123")
+			Expect(err).ToNot(HaveOccurred())
+			Expect(proto.Equal(object, ffv1.HostPool_builder{
+				Id: "pool-123",
+				Status: ffv1.HostPoolStatus_builder{
+					State: ffv1.HostPoolState_HOST_POOL_STATE_READY,
+				}.Build(),
+			}.Build())).To(BeTrue())
+		})
+
+		It("Invokes host pools delete method", func() {
+			// Register a host pools server that responds to the delete request:
+			ffv1.RegisterHostPoolsServer(server.Registrar(), &testing.HostPoolsServerFuncs{
+				DeleteFunc: func(ctx context.Context, request *ffv1.HostPoolsDeleteRequest,
+				) (response *ffv1.HostPoolsDeleteResponse, err error) {
+					defer GinkgoRecover()
+					Expect(request.GetId()).To(Equal("pool-123"))
+					response = ffv1.HostPoolsDeleteResponse_builder{}.Build()
+					return
+				},
+			})
+
+			// Start the server:
+			server.Start()
+
+			// Use the helper to send the request, and verify the response:
+			objectHelper := helper.Lookup("hostpool")
+			Expect(objectHelper).ToNot(BeNil())
+			err := objectHelper.Delete(ctx, "pool-123")
 			Expect(err).ToNot(HaveOccurred())
 		})
 	})

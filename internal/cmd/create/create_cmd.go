@@ -30,6 +30,7 @@ import (
 	"gopkg.in/yaml.v3"
 
 	"github.com/innabox/fulfillment-cli/internal/cmd/create/cluster"
+	"github.com/innabox/fulfillment-cli/internal/cmd/create/hostpool"
 	"github.com/innabox/fulfillment-cli/internal/cmd/create/hub"
 	"github.com/innabox/fulfillment-cli/internal/cmd/create/virtualmachine"
 	"github.com/innabox/fulfillment-cli/internal/config"
@@ -44,6 +45,7 @@ func Cmd() *cobra.Command {
 		RunE:  runner.run,
 	}
 	result.AddCommand(cluster.Cmd())
+	result.AddCommand(hostpool.Cmd())
 	result.AddCommand(hub.Cmd())
 	result.AddCommand(virtualmachine.Cmd())
 	flags := result.Flags()
