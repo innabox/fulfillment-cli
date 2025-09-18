@@ -124,3 +124,93 @@ func (s *ClustersServerFuncs) Update(ctx context.Context,
 	response, err = s.UpdateFunc(ctx, request)
 	return
 }
+
+// Make sure that we implement the interface.
+var _ ffv1.HostsServer = (*HostsServerFuncs)(nil)
+
+// HostsServerFuncs is an implementation of the hosts server that uses configurable functions to implement the
+// methods.
+type HostsServerFuncs struct {
+	ffv1.UnimplementedHostsServer
+
+	CreateFunc func(context.Context, *ffv1.HostsCreateRequest) (*ffv1.HostsCreateResponse, error)
+	DeleteFunc func(context.Context, *ffv1.HostsDeleteRequest) (*ffv1.HostsDeleteResponse, error)
+	GetFunc    func(context.Context, *ffv1.HostsGetRequest) (*ffv1.HostsGetResponse, error)
+	ListFunc   func(context.Context, *ffv1.HostsListRequest) (*ffv1.HostsListResponse, error)
+	UpdateFunc func(context.Context, *ffv1.HostsUpdateRequest) (*ffv1.HostsUpdateResponse, error)
+}
+
+func (s *HostsServerFuncs) Create(ctx context.Context,
+	request *ffv1.HostsCreateRequest) (response *ffv1.HostsCreateResponse, err error) {
+	response, err = s.CreateFunc(ctx, request)
+	return
+}
+
+func (s *HostsServerFuncs) Delete(ctx context.Context,
+	request *ffv1.HostsDeleteRequest) (response *ffv1.HostsDeleteResponse, err error) {
+	response, err = s.DeleteFunc(ctx, request)
+	return
+}
+
+func (s *HostsServerFuncs) Get(ctx context.Context,
+	request *ffv1.HostsGetRequest) (response *ffv1.HostsGetResponse, err error) {
+	response, err = s.GetFunc(ctx, request)
+	return
+}
+
+func (s *HostsServerFuncs) List(ctx context.Context,
+	request *ffv1.HostsListRequest) (response *ffv1.HostsListResponse, err error) {
+	response, err = s.ListFunc(ctx, request)
+	return
+}
+
+func (s *HostsServerFuncs) Update(ctx context.Context,
+	request *ffv1.HostsUpdateRequest) (response *ffv1.HostsUpdateResponse, err error) {
+	response, err = s.UpdateFunc(ctx, request)
+	return
+}
+
+// Make sure that we implement the interface.
+var _ ffv1.HostPoolsServer = (*HostPoolsServerFuncs)(nil)
+
+// HostPoolsServerFuncs is an implementation of the host pools server that uses configurable functions to implement the
+// methods.
+type HostPoolsServerFuncs struct {
+	ffv1.UnimplementedHostPoolsServer
+
+	CreateFunc func(context.Context, *ffv1.HostPoolsCreateRequest) (*ffv1.HostPoolsCreateResponse, error)
+	DeleteFunc func(context.Context, *ffv1.HostPoolsDeleteRequest) (*ffv1.HostPoolsDeleteResponse, error)
+	GetFunc    func(context.Context, *ffv1.HostPoolsGetRequest) (*ffv1.HostPoolsGetResponse, error)
+	ListFunc   func(context.Context, *ffv1.HostPoolsListRequest) (*ffv1.HostPoolsListResponse, error)
+	UpdateFunc func(context.Context, *ffv1.HostPoolsUpdateRequest) (*ffv1.HostPoolsUpdateResponse, error)
+}
+
+func (s *HostPoolsServerFuncs) Create(ctx context.Context,
+	request *ffv1.HostPoolsCreateRequest) (response *ffv1.HostPoolsCreateResponse, err error) {
+	response, err = s.CreateFunc(ctx, request)
+	return
+}
+
+func (s *HostPoolsServerFuncs) Delete(ctx context.Context,
+	request *ffv1.HostPoolsDeleteRequest) (response *ffv1.HostPoolsDeleteResponse, err error) {
+	response, err = s.DeleteFunc(ctx, request)
+	return
+}
+
+func (s *HostPoolsServerFuncs) Get(ctx context.Context,
+	request *ffv1.HostPoolsGetRequest) (response *ffv1.HostPoolsGetResponse, err error) {
+	response, err = s.GetFunc(ctx, request)
+	return
+}
+
+func (s *HostPoolsServerFuncs) List(ctx context.Context,
+	request *ffv1.HostPoolsListRequest) (response *ffv1.HostPoolsListResponse, err error) {
+	response, err = s.ListFunc(ctx, request)
+	return
+}
+
+func (s *HostPoolsServerFuncs) Update(ctx context.Context,
+	request *ffv1.HostPoolsUpdateRequest) (response *ffv1.HostPoolsUpdateResponse, err error) {
+	response, err = s.UpdateFunc(ctx, request)
+	return
+}
