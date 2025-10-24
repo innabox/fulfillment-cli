@@ -135,7 +135,7 @@ func (c *runnerContext) run(cmd *cobra.Command, args []string) error {
 			if ok && status.Code() == grpccodes.NotFound {
 				c.console.Printf(
 					ctx,
-					"Can't delete %s '%s' because it does't exist.\n",
+					"Can't delete %s '%s' because it doesn't exist.\n",
 					args[0], id,
 				)
 				return exit.Error(1)
