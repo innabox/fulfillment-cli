@@ -134,8 +134,8 @@ var _ = Describe("Reflection helper", func() {
 				"host",
 				"hostclass",
 				"hostpool",
-				"virtualmachinetemplate",
 				"virtualmachine",
+				"virtualmachinetemplate",
 			))
 		})
 
@@ -143,11 +143,11 @@ var _ = Describe("Reflection helper", func() {
 			Expect(helper.Plurals()).To(ConsistOf(
 				"clusters",
 				"clustertemplates",
-				"hosts",
 				"hostclasses",
 				"hostpools",
-				"virtualmachinetemplates",
+				"hosts",
 				"virtualmachines",
+				"virtualmachinetemplates",
 			))
 		})
 

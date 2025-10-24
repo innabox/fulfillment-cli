@@ -44,7 +44,7 @@ func (c *runnerContext) run(cmd *cobra.Command, args []string) error {
 	}
 
 	// Clear all the details:
-	cfg.Token = ""
+	cfg.AccessToken = ""
 	cfg.Plaintext = false
 	cfg.Insecure = false
 	cfg.Address = ""
