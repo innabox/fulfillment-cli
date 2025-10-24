@@ -19,6 +19,7 @@ import (
 	"github.com/innabox/fulfillment-cli/internal/cmd/describe/cluster"
 	"github.com/innabox/fulfillment-cli/internal/cmd/describe/host"
 	"github.com/innabox/fulfillment-cli/internal/cmd/describe/hostpool"
+	"github.com/innabox/fulfillment-cli/internal/cmd/describe/virtualmachine"
 )
 
 func Cmd() *cobra.Command {
@@ -29,5 +30,6 @@ func Cmd() *cobra.Command {
 	result.AddCommand(cluster.Cmd())
 	result.AddCommand(host.Cmd())
 	result.AddCommand(hostpool.Cmd())
+	result.AddCommand(virtualmachine.Cmd())
 	return result
 }
