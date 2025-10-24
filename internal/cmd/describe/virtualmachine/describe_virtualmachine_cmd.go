@@ -1,0 +1,101 @@
+/*
+Copyright (c) 2025 Red Hat Inc.
+
+Licensed under the Apache License, Version 2.0 (the "License"); you may not use this file except in compliance with the
+License. You may obtain a copy of the License at
+
+  http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software distributed under the License is distributed on an
+"AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the License for the specific
+language governing permissions and limitations under the License.
+*/
+
+package virtualmachine
+
+import (
+	"fmt"
+	"os"
+	"strings"
+	"text/tabwriter"
+
+	ffv1 "github.com/innabox/fulfillment-common/api/fulfillment/v1"
+	"github.com/spf13/cobra"
+
+	"github.com/innabox/fulfillment-cli/internal/config"
+)
+
+// Cmd creates the command to describe a virtual machine.
+func Cmd() *cobra.Command {
+	runner := &runnerContext{}
+	result := &cobra.Command{
+		Use:   "virtualmachine [flags] ID",
+		Short: "Describe a virtual machine",
+		RunE:  runner.run,
+	}
+	return result
+}
+
+type runnerContext struct {
+}
+
+func (c *runnerContext) run(cmd *cobra.Command, args []string) error {
+	// Check that there is exactly one virtual machine ID specified
+	if len(args) != 1 {
+		fmt.Fprintf(
+			os.Stderr,
+			"Expected exactly one virtual machine ID\n",
+		)
+		os.Exit(1)
+	}
+	id := args[0]
+
+	// Get the context:
+	ctx := cmd.Context()
+
+	// Get the configuration:
+	cfg, err := config.Load()
+	if err != nil {
+		return err
+	}
+	if cfg.Address == "" {
+		return fmt.Errorf("there is no configuration, run the 'login' command")
+	}
+
+	// Create the gRPC connection from the configuration:
+	conn, err := cfg.Connect(ctx, cmd.Flags())
+	if err != nil {
+		return fmt.Errorf("failed to create gRPC connection: %w", err)
+	}
+	defer conn.Close()
+
+	// Create the client for the virtual machines service:
+	client := ffv1.NewVirtualMachinesClient(conn)
+
+	// Get the virtual machine:
+	response, err := client.Get(ctx, ffv1.VirtualMachinesGetRequest_builder{
+		Id: id,
+	}.Build())
+	if err != nil {
+		return fmt.Errorf("failed to describe virtual machine: %w", err)
+	}
+
+	// Display the virtual machine:
+	writer := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
+	vm := response.Object
+	template := "-"
+	if vm.Spec != nil {
+		template = vm.Spec.Template
+	}
+	state := "-"
+	if vm.Status != nil {
+		state = vm.Status.State.String()
+		state = strings.Replace(state, "VIRTUAL_MACHINE_STATE_", "", -1)
+	}
+	fmt.Fprintf(writer, "ID:\t%s\n", vm.Id)
+	fmt.Fprintf(writer, "Template:\t%s\n", template)
+	fmt.Fprintf(writer, "State:\t%s\n", state)
+	writer.Flush()
+
+	return nil
+}
