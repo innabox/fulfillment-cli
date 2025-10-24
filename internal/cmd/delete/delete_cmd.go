@@ -22,8 +22,11 @@ import (
 	"github.com/innabox/fulfillment-common/logging"
 	"github.com/spf13/cobra"
 	"google.golang.org/grpc"
+	grpccodes "google.golang.org/grpc/codes"
+	grpcstatus "google.golang.org/grpc/status"
 
 	"github.com/innabox/fulfillment-cli/internal/config"
+	"github.com/innabox/fulfillment-cli/internal/exit"
 	"github.com/innabox/fulfillment-cli/internal/reflection"
 	"github.com/innabox/fulfillment-cli/internal/templating"
 	"github.com/innabox/fulfillment-cli/internal/terminal"
@@ -128,6 +131,15 @@ func (c *runnerContext) run(cmd *cobra.Command, args []string) error {
 	for _, id := range args[1:] {
 		err = c.helper.Delete(ctx, id)
 		if err != nil {
+			status, ok := grpcstatus.FromError(err)
+			if ok && status.Code() == grpccodes.NotFound {
+				c.console.Printf(
+					ctx,
+					"Can't delete %s '%s' because it does't exist.\n",
+					args[0], id,
+				)
+				return exit.Error(1)
+			}
 			return fmt.Errorf(
 				"failed to delete %s '%s': %w",
 				args[0], id, err,
