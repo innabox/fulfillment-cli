@@ -219,12 +219,11 @@ func (c *Config) Connect(ctx context.Context, flags *pflag.FlagSet) (result *grp
 	}
 
 	// Create the gRPC client:
-	result, err = network.NewClient().
+	result, err = network.NewGrpcClient().
 		SetLogger(logger).
 		SetInsecure(c.Insecure).
 		SetCaPool(c.caPool).
 		SetTokenSource(tokenSource).
-		SetNetwork("tcp").
 		SetAddress(c.Address).
 		AddUnaryInterceptor(versionInterceptor.UnaryClient).
 		AddStreamInterceptor(versionInterceptor.StreamClient).

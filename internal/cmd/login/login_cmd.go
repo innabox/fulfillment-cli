@@ -208,10 +208,9 @@ func (c *runnerContext) run(cmd *cobra.Command, args []string) error {
 	}
 
 	// Create an anonymous gRPC client that we will use to fetch the metadata:
-	grpcConn, err := network.NewClient().
+	grpcConn, err := network.NewGrpcClient().
 		SetLogger(c.logger).
 		SetFlags(c.flags, network.GrpcClientName).
-		SetNetwork("tcp").
 		SetAddress(c.address).
 		SetInsecure(c.args.insecure).
 		SetCaPool(c.caPool).
@@ -312,12 +311,11 @@ func (c *runnerContext) run(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return fmt.Errorf("failed to close anonymous gRPC connection: %w", err)
 	}
-	grpcConn, err = network.NewClient().
+	grpcConn, err = network.NewGrpcClient().
 		SetLogger(c.logger).
 		SetFlags(c.flags, network.GrpcClientName).
 		SetInsecure(c.args.insecure).
 		SetCaPool(c.caPool).
-		SetNetwork("tcp").
 		SetAddress(c.address).
 		SetTokenSource(tokenSource).
 		Build()
