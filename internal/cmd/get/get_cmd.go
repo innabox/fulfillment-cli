@@ -454,12 +454,12 @@ func (c *runnerContext) renderJson(ctx context.Context, objects []proto.Message)
 	if err != nil {
 		return err
 	}
-	encoder := json.NewEncoder(os.Stdout)
-	encoder.SetIndent("", "  ")
 	if len(values) == 1 {
-		return encoder.Encode(values[0])
+		c.console.RenderJson(ctx, values[0])
+	} else {
+		c.console.RenderJson(ctx, values)
 	}
-	return encoder.Encode(values)
+	return nil
 }
 
 func (c *runnerContext) renderYaml(ctx context.Context, objects []proto.Message) error {
