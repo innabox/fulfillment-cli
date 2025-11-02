@@ -467,12 +467,12 @@ func (c *runnerContext) renderYaml(ctx context.Context, objects []proto.Message)
 	if err != nil {
 		return err
 	}
-	encoder := yaml.NewEncoder(os.Stdout)
-	encoder.SetIndent(2)
 	if len(values) == 1 {
-		return encoder.Encode(values[0])
+		c.console.RenderYaml(ctx, values[0])
+	} else {
+		c.console.RenderYaml(ctx, values)
 	}
-	return encoder.Encode(values)
+	return nil
 }
 
 func (c *runnerContext) encodeObjects(objects []proto.Message) (result []any, err error) {

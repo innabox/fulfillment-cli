@@ -14,6 +14,7 @@ language governing permissions and limitations under the License.
 package terminal
 
 import (
+	"context"
 	"log/slog"
 	"testing"
 
@@ -28,9 +29,15 @@ func TestTerminal(t *testing.T) {
 }
 
 var logger *slog.Logger
+var ctx context.Context
 
 var _ = BeforeSuite(func() {
 	var err error
+
+	// Create context:
+	ctx = context.Background()
+
+	// Create logger:
 	logger, err = logging.NewLogger().
 		SetLevel(slog.LevelDebug.String()).
 		SetWriter(GinkgoWriter).

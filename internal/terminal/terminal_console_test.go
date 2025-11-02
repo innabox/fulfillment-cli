@@ -35,4 +35,60 @@ var _ = Describe("Console", func() {
 			Expect(console).To(BeNil())
 		})
 	})
+
+	Describe("RenderYaml", func() {
+		It("Can render a simple map as YAML", func() {
+			console, err := NewConsole().
+				SetLogger(logger).
+				Build()
+			Expect(err).ToNot(HaveOccurred())
+
+			data := map[string]any{
+				"name":  "test",
+				"value": 123,
+			}
+			console.RenderYaml(ctx, data)
+		})
+
+		It("Can render a slice as YAML", func() {
+			console, err := NewConsole().
+				SetLogger(logger).
+				Build()
+			Expect(err).ToNot(HaveOccurred())
+
+			data := []map[string]any{
+				{"id": "1", "name": "first"},
+				{"id": "2", "name": "second"},
+			}
+			console.RenderYaml(ctx, data)
+		})
+	})
+
+	Describe("RenderJson", func() {
+		It("Can render a simple map as JSON", func() {
+			console, err := NewConsole().
+				SetLogger(logger).
+				Build()
+			Expect(err).ToNot(HaveOccurred())
+
+			data := map[string]any{
+				"name":  "test",
+				"value": 123,
+			}
+			console.RenderJson(ctx, data)
+		})
+
+		It("Can render a slice as JSON", func() {
+			console, err := NewConsole().
+				SetLogger(logger).
+				Build()
+			Expect(err).ToNot(HaveOccurred())
+
+			data := []map[string]any{
+				{"id": "1", "name": "first"},
+				{"id": "2", "name": "second"},
+			}
+			console.RenderJson(ctx, data)
+		})
+	})
 })

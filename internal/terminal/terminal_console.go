@@ -16,15 +16,21 @@ package terminal
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"log/slog"
 	"os"
 	"strings"
 
-	"github.com/innabox/fulfillment-common/templating"
+	"github.com/alecthomas/chroma/v2/formatters"
+	"github.com/alecthomas/chroma/v2/lexers"
+	"github.com/alecthomas/chroma/v2/styles"
 	"github.com/mattn/go-colorable"
-	json "github.com/neilotoole/jsoncolor"
+	"github.com/mattn/go-isatty"
+	"gopkg.in/yaml.v3"
+
+	"github.com/innabox/fulfillment-common/templating"
 )
 
 // ConsoleBuilder contains the data and logic needed to create a console. Don't create objects of this type directly,
@@ -113,21 +119,81 @@ func (c *Console) Render(ctx context.Context, engine *templating.Engine, templat
 	}
 }
 
+// RenderJson renders the given data as JSON to stdout. If the terminal supports color, the output will be colorized
+// using the chroma syntax highlighter.
 func (c *Console) RenderJson(ctx context.Context, data any) {
-	var encoder *json.Encoder
-	if json.IsColorTerminal(os.Stdout) {
-		encoder = json.NewEncoder(colorable.NewColorable(os.Stdout))
-		encoder.SetColors(json.DefaultColors())
-	} else {
-		encoder = json.NewEncoder(os.Stdout)
+	bytes, err := json.MarshalIndent(data, "", "  ")
+	if err != nil {
+		c.logger.ErrorContext(
+			ctx,
+			"Failed to encode JSON",
+			slog.Any("error", err),
+		)
+		return
 	}
-	encoder.SetIndent("", "  ")
+	text := string(bytes) + "\n"
+	c.renderColored(ctx, text, "json")
+}
+
+// RenderYaml renders the given data as YAML to stdout. If the terminal supports color, the output will be colorized
+// using the chroma syntax highlighter.
+func (c *Console) RenderYaml(ctx context.Context, data any) {
+	buffer := &bytes.Buffer{}
+	encoder := yaml.NewEncoder(buffer)
+	encoder.SetIndent(2)
 	err := encoder.Encode(data)
 	if err != nil {
 		c.logger.ErrorContext(
 			ctx,
-			"Failed to render JSON",
+			"Failed to encode YAML",
 			slog.Any("error", err),
 		)
+		return
 	}
+	encoder.Close()
+	c.renderColored(ctx, buffer.String(), "yaml")
+}
+
+// renderColored renders the given text to stdout with syntax highlighting using the specified lexer. If the terminal
+// doesn't support color or an error occurs, it falls back to plain text output.
+func (c *Console) renderColored(ctx context.Context, text string, format string) error {
+	if isatty.IsTerminal(os.Stdout.Fd()) {
+		lexer := lexers.Get(format)
+		if lexer == nil {
+			lexer = lexers.Fallback
+		}
+		style := styles.Get("friendly")
+		if style == nil {
+			style = styles.Fallback
+		}
+		formatter := formatters.Get("terminal256")
+		if formatter == nil {
+			formatter = formatters.Fallback
+		}
+		iterator, err := lexer.Tokenise(nil, text)
+		if err != nil {
+			c.logger.ErrorContext(
+				ctx,
+				"Failed to tokenize text",
+				slog.String("format", format),
+				slog.Any("error", err),
+			)
+			fmt.Fprint(os.Stdout, text)
+			return nil
+		}
+		err = formatter.Format(colorable.NewColorable(os.Stdout), style, iterator)
+		if err != nil {
+			c.logger.ErrorContext(
+				ctx,
+				"Failed to format text",
+				slog.String("format", format),
+				slog.Any("error", err),
+			)
+			fmt.Fprint(os.Stdout, text)
+			return nil
+		}
+		return nil
+	}
+	fmt.Fprint(os.Stdout, text)
+	return nil
 }
