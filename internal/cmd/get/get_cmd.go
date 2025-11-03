@@ -274,6 +274,10 @@ func (c *runnerContext) defaultTable() *Table {
 				Header: "ID",
 				Value:  "this.id",
 			},
+			{
+				Header: "NAME",
+				Value:  "has(this.metadata.name)? this.metadata.name: '-'",
+			},
 		},
 	}
 }
