@@ -23,6 +23,7 @@ import (
 	"os"
 	"path"
 	"slices"
+	"strconv"
 	"strings"
 	"text/tabwriter"
 
@@ -70,7 +71,7 @@ func Cmd() *cobra.Command {
 		},
 	}
 	result := &cobra.Command{
-		Use:   "get OBJECT [OPTION]... [ID]...",
+		Use:   "get OBJECT [OPTION]... [ID|NAME]...",
 		Short: "Get objects",
 		RunE:  runner.run,
 	}
@@ -79,7 +80,7 @@ func Cmd() *cobra.Command {
 	result.AddCommand(token.Cmd())
 	flags := result.Flags()
 	flags.StringVarP(
-		&runner.format,
+		&runner.args.format,
 		"output",
 		"o",
 		outputFormatTable,
@@ -89,13 +90,13 @@ func Cmd() *cobra.Command {
 		),
 	)
 	flags.StringVar(
-		&runner.filter,
+		&runner.args.filter,
 		"filter",
 		"",
 		"CEL expression used for filtering results.",
 	)
 	flags.BoolVar(
-		&runner.includeDeleted,
+		&runner.args.includeDeleted,
 		"include-deleted",
 		false,
 		"Include deleted objects.",
@@ -104,12 +105,14 @@ func Cmd() *cobra.Command {
 }
 
 type runnerContext struct {
+	args struct {
+		format         string
+		filter         string
+		includeDeleted bool
+	}
 	logger         *slog.Logger
 	engine         *templating.Engine
 	console        *terminal.Console
-	format         string
-	filter         string
-	includeDeleted bool
 	conn           *grpc.ClientConn
 	marshalOptions protojson.MarshalOptions
 	helper         *reflection.ObjectHelper
@@ -182,29 +185,22 @@ func (c *runnerContext) run(cmd *cobra.Command, args []string) error {
 	}
 
 	// Check the flags:
-	if c.format != outputFormatTable && c.format != outputFormatJson && c.format != outputFormatYaml {
+	if c.args.format != outputFormatTable && c.args.format != outputFormatJson && c.args.format != outputFormatYaml {
 		return fmt.Errorf(
 			"unknown output format '%s', should be '%s', '%s' or '%s'",
-			c.format, outputFormatTable, outputFormatJson, outputFormatYaml,
+			c.args.format, outputFormatTable, outputFormatJson, outputFormatYaml,
 		)
 	}
 
-	// If there additional arguments in the command line we assume they are identifiers of individual objects, so
-	// we need to fetch them using the 'Get' method instead of the 'List' method.
-	var objects []proto.Message
-	ids := args[1:]
-	if len(ids) > 0 {
-		objects, err = c.get(ctx, ids)
-	} else {
-		objects, err = c.list(ctx)
-	}
+	// Get the objects using the list method, which will handle filtering by identifiers or names if provided.
+	objects, err := c.list(ctx, args[1:])
 	if err != nil {
 		return err
 	}
 
 	// Render the items:
 	var render func(context.Context, []proto.Message) error
-	switch c.format {
+	switch c.args.format {
 	case outputFormatJson:
 		render = c.renderJson
 	case outputFormatYaml:
@@ -215,24 +211,33 @@ func (c *runnerContext) run(cmd *cobra.Command, args []string) error {
 	return render(ctx, objects)
 }
 
-func (c *runnerContext) get(ctx context.Context, ids []string) (results []proto.Message, err error) {
-	objects := make([]proto.Message, len(ids))
-	for i, id := range ids {
-		objects[i], err = c.helper.Get(ctx, id)
-		if err != nil {
-			return
+func (c *runnerContext) list(ctx context.Context, keys []string) (results []proto.Message, err error) {
+	var options reflection.ListOptions
+
+	// If keys (identifiers or names) were provided, build a CEL filter to match them.
+	if len(keys) > 0 {
+		var values []string
+		for _, key := range keys {
+			values = append(values, strconv.Quote(key))
+		}
+		list := strings.Join(values, ", ")
+		options.Filter = fmt.Sprintf(
+			`this.id in [%[1]s] || this.metadata.name in [%[1]s]`,
+			list,
+		)
+	}
+
+	// Apply the user-provided filter if specified.
+	if c.args.filter != "" {
+		if options.Filter != "" {
+			options.Filter = fmt.Sprintf("(%s) && (%s)", options.Filter, c.args.filter)
+		} else {
+			options.Filter = c.args.filter
 		}
 	}
-	results = objects
-	return
-}
 
-func (c *runnerContext) list(ctx context.Context) (results []proto.Message, err error) {
-	var options reflection.ListOptions
-	if c.filter != "" {
-		options.Filter = c.filter
-	}
-	if !c.includeDeleted {
+	// Exclude deleted objects unless explicitly requested.
+	if !c.args.includeDeleted {
 		const notDeletedFilter = "!has(this.metadata.deletion_timestamp)"
 		if options.Filter != "" {
 			options.Filter = fmt.Sprintf("%s && (%s)", notDeletedFilter, options.Filter)
@@ -240,6 +245,7 @@ func (c *runnerContext) list(ctx context.Context) (results []proto.Message, err 
 			options.Filter = notDeletedFilter
 		}
 	}
+
 	results, err = c.helper.List(ctx, options)
 	return
 }
@@ -298,8 +304,8 @@ func (c *runnerContext) renderTable(ctx context.Context, objects []proto.Message
 		table = c.defaultTable()
 	}
 
-	// If the user has asked to include deleted objects then add the deletion timesgamp column:
-	if c.includeDeleted {
+	// If the user has asked to include deleted objects then add the deletion timestamp column:
+	if c.args.includeDeleted {
 		deletedCol := &Column{
 			Header: "DELETED",
 			Value:  "has(this.metadata.deletion_timestamp)? string(this.metadata.deletion_timestamp): '-'",
