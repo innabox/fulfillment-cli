@@ -25,7 +25,6 @@ import (
 	"strings"
 	"time"
 
-	ffv1 "github.com/innabox/fulfillment-common/api/fulfillment/v1"
 	"github.com/innabox/fulfillment-common/logging"
 	"github.com/innabox/fulfillment-common/templating"
 	"github.com/spf13/cobra"
@@ -40,6 +39,8 @@ import (
 	"github.com/innabox/fulfillment-cli/internal/config"
 	"github.com/innabox/fulfillment-cli/internal/exit"
 	"github.com/innabox/fulfillment-cli/internal/terminal"
+	ffv1 "github.com/innabox/fulfillment-common/api/fulfillment/v1"
+	sharedv1 "github.com/innabox/fulfillment-common/api/shared/v1"
 )
 
 //go:embed templates
@@ -54,38 +55,48 @@ func Cmd() *cobra.Command {
 	}
 	flags := result.Flags()
 	flags.StringVarP(
-		&runner.template,
+		&runner.args.name,
+		"name",
+		"n",
+		"",
+		"Name of the virtual machine.",
+	)
+	flags.StringVarP(
+		&runner.args.template,
 		"template",
 		"t",
 		"",
-		"Template identifier",
+		"Template identifier.",
 	)
 	flags.StringSliceVarP(
-		&runner.templateParameterValues,
+		&runner.args.templateParameterValues,
 		"template-parameter",
 		"p",
 		[]string{},
-		"Template parameter in the format 'name=value'",
+		"Template parameter in the format 'name=value'.",
 	)
 	flags.StringSliceVarP(
-		&runner.templateParameterFiles,
+		&runner.args.templateParameterFiles,
 		"template-parameter-file",
 		"f",
 		[]string{},
-		"Template parameter from file in the format 'name=filename'",
+		"Template parameter from file in the format 'name=filename'.",
 	)
 	return result
 }
 
 type runnerContext struct {
-	template                string
-	templateParameterValues []string
-	templateParameterFiles  []string
-	logger                  *slog.Logger
-	console                 *terminal.Console
-	engine                  *templating.Engine
-	templatesClient         ffv1.VirtualMachineTemplatesClient
-	virtualMachinesClient   ffv1.VirtualMachinesClient
+	args struct {
+		name                    string
+		template                string
+		templateParameterValues []string
+		templateParameterFiles  []string
+	}
+	logger                *slog.Logger
+	console               *terminal.Console
+	engine                *templating.Engine
+	templatesClient       ffv1.VirtualMachineTemplatesClient
+	virtualMachinesClient ffv1.VirtualMachinesClient
 }
 
 func (c *runnerContext) run(cmd *cobra.Command, args []string) error {
@@ -118,7 +129,7 @@ func (c *runnerContext) run(cmd *cobra.Command, args []string) error {
 	}
 
 	// Check that we have a template:
-	if c.template == "" {
+	if c.args.template == "" {
 		return fmt.Errorf("template identifier is required")
 	}
 
@@ -135,7 +146,7 @@ func (c *runnerContext) run(cmd *cobra.Command, args []string) error {
 
 	// Fetch the virtual machine template:
 	templateResponse, err := c.templatesClient.Get(ctx, ffv1.VirtualMachineTemplatesGetRequest_builder{
-		Id: c.template,
+		Id: c.args.template,
 	}.Build())
 	if err != nil {
 		status, ok := grpcstatus.FromError(err)
@@ -153,14 +164,14 @@ func (c *runnerContext) run(cmd *cobra.Command, args []string) error {
 				})
 				c.console.Render(ctx, c.engine, "template_not_found.txt", map[string]any{
 					"Binary":    os.Args[0],
-					"Template":  c.template,
+					"Template":  c.args.template,
 					"Templates": templates,
 				})
 				return exit.Error(1)
 			}
-			return fmt.Errorf("failed to get template '%s': %w", c.template, err)
+			return fmt.Errorf("failed to get template '%s': %w", c.args.template, err)
 		}
-		return fmt.Errorf("failed to get template '%s': %w", c.template, err)
+		return fmt.Errorf("failed to get template '%s': %w", c.args.template, err)
 	}
 	template := templateResponse.Object
 	if template == nil {
@@ -173,7 +184,7 @@ func (c *runnerContext) run(cmd *cobra.Command, args []string) error {
 		validTemplateParameters := c.validTemplateParameters(template)
 		c.console.Render(ctx, c.engine, "template_parameter_issues.txt", map[string]any{
 			"Binary":     os.Args[0],
-			"Template":   c.template,
+			"Template":   c.args.template,
 			"Parameters": validTemplateParameters,
 			"Issues":     templateParameterIssues,
 		})
@@ -182,8 +193,11 @@ func (c *runnerContext) run(cmd *cobra.Command, args []string) error {
 
 	// Prepare the virtual machine:
 	virtualMachine := ffv1.VirtualMachine_builder{
+		Metadata: sharedv1.Metadata_builder{
+			Name: c.args.name,
+		}.Build(),
 		Spec: ffv1.VirtualMachineSpec_builder{
-			Template:           c.template,
+			Template:           c.args.template,
 			TemplateParameters: templateParameterValues,
 		}.Build(),
 	}.Build()
@@ -217,7 +231,7 @@ func (c *runnerContext) parseTemplateParameters(ctx context.Context,
 	}
 
 	// Parse '--template-parameter' flags:
-	for _, flag := range c.templateParameterValues {
+	for _, flag := range c.args.templateParameterValues {
 		parts := strings.SplitN(flag, "=", 2)
 		if len(parts) != 2 {
 			name := strings.TrimSpace(flag)
@@ -274,7 +288,7 @@ func (c *runnerContext) parseTemplateParameters(ctx context.Context,
 	}
 
 	// Parse '--template-parameter-file' flags:
-	for _, flag := range c.templateParameterFiles {
+	for _, flag := range c.args.templateParameterFiles {
 		parts := strings.SplitN(flag, "=", 2)
 		if len(parts) != 2 {
 			name := strings.TrimSpace(flag)
