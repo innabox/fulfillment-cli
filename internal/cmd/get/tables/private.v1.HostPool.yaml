@@ -15,7 +15,9 @@ columns:
 
 - header: ID
   value: this.id
-  width: 100
+
+- header: NAME
+  value: "has(this.metadata.name)? this.metadata.name: '-'"
 
 - header: STATE
   value: this.status.state

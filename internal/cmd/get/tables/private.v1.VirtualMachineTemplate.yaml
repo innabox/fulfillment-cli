@@ -16,6 +16,9 @@ columns:
 - header: ID
   value: this.id
 
+- header: NAME
+  value: "has(this.metadata.name)? this.metadata.name: '-'"
+
 - header: TITLE
   value: this.title
 

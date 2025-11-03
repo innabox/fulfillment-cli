@@ -29,8 +29,6 @@ type Column struct {
 	// and replacing underscores with spaces.
 	Header string `yaml:"header,omitempty"`
 
-	Width int `yaml:"width,omitempty"`
-
 	// Value is a CEL expression that will be used to calculate the rendered value. The expression can access
 	// the message via the `this` built-in variable.
 	Value string `yaml:"value,omitempty"`
