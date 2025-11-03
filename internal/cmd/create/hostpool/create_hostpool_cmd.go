@@ -24,6 +24,7 @@ import (
 
 	"github.com/innabox/fulfillment-cli/internal/config"
 	ffv1 "github.com/innabox/fulfillment-common/api/fulfillment/v1"
+	sharedv1 "github.com/innabox/fulfillment-common/api/shared/v1"
 )
 
 func Cmd() *cobra.Command {
@@ -34,20 +35,30 @@ func Cmd() *cobra.Command {
 		RunE:  runner.run,
 	}
 	flags := result.Flags()
+	flags.StringVarP(
+		&runner.args.name,
+		"name",
+		"n",
+		"",
+		"Name of the host pool.",
+	)
 	flags.StringArrayVarP(
-		&runner.hostSets,
+		&runner.args.hostSets,
 		"host-set",
 		"s",
 		[]string{},
-		"Host set in the format 'name=host_class:value,size:value' (e.g., 'workers=host_class:worker-class,size:5')",
+		"Host set in the format 'name=host_class:value,size:value' (e.g., 'workers=host_class:worker-class,size:5').",
 	)
 	return result
 }
 
 type runnerContext struct {
-	hostSets []string
-	logger   *slog.Logger
-	client   ffv1.HostPoolsClient
+	args struct {
+		name     string
+		hostSets []string
+	}
+	logger *slog.Logger
+	client ffv1.HostPoolsClient
 }
 
 func (c *runnerContext) run(cmd *cobra.Command, args []string) error {
@@ -69,7 +80,7 @@ func (c *runnerContext) run(cmd *cobra.Command, args []string) error {
 	}
 
 	// Check that we have at least one host set:
-	if len(c.hostSets) == 0 {
+	if len(c.args.hostSets) == 0 {
 		return fmt.Errorf("at least one host set is required, use --host-set flag in format 'name=host_class:value,size:value'")
 	}
 
@@ -90,13 +101,14 @@ func (c *runnerContext) run(cmd *cobra.Command, args []string) error {
 	}
 
 	// Prepare the host pool:
-	hostPoolBuilder := ffv1.HostPool_builder{
+	hostPool := ffv1.HostPool_builder{
+		Metadata: sharedv1.Metadata_builder{
+			Name: c.args.name,
+		}.Build(),
 		Spec: ffv1.HostPoolSpec_builder{
 			HostSets: hostSetsMap,
 		}.Build(),
-	}
-
-	hostPool := hostPoolBuilder.Build()
+	}.Build()
 
 	// Create the host pool:
 	response, err := c.client.Create(ctx, ffv1.HostPoolsCreateRequest_builder{
@@ -117,7 +129,7 @@ func (c *runnerContext) run(cmd *cobra.Command, args []string) error {
 func (c *runnerContext) parseHostSets() (map[string]*ffv1.HostPoolHostSet, error) {
 	result := make(map[string]*ffv1.HostPoolHostSet)
 
-	for _, hostSetFlag := range c.hostSets {
+	for _, hostSetFlag := range c.args.hostSets {
 		// Split by '=' to get name and parameters
 		parts := strings.SplitN(hostSetFlag, "=", 2)
 		if len(parts) != 2 {
