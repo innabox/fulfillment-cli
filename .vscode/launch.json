@@ -9,6 +9,20 @@
                         "program": "${fileDirname}"
                 },
                 {
+                        "name": "login (plaintext)",
+                        "type": "go",
+                        "request": "launch",
+                        "mode": "auto",
+                        "program": "${workspaceFolder}",
+                        "args": [
+                                "login",
+                                "--log-level=debug",
+                                "--log-file=stdout",
+                                "--plaintext",
+                                "127.0.0.1:8000"
+                        ]
+                },
+                {
                         "name": "login (token script)",
                         "type": "go",
                         "request": "launch",

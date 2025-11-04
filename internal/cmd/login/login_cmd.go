@@ -211,9 +211,10 @@ func (c *runnerContext) run(cmd *cobra.Command, args []string) error {
 	grpcConn, err := network.NewGrpcClient().
 		SetLogger(c.logger).
 		SetFlags(c.flags, network.GrpcClientName).
-		SetAddress(c.address).
+		SetPlaintext(c.args.plaintext).
 		SetInsecure(c.args.insecure).
 		SetCaPool(c.caPool).
+		SetAddress(c.address).
 		Build()
 	if err != nil {
 		return fmt.Errorf("failed to create anonymous gRPC connection: %w", err)
@@ -314,6 +315,7 @@ func (c *runnerContext) run(cmd *cobra.Command, args []string) error {
 	grpcConn, err = network.NewGrpcClient().
 		SetLogger(c.logger).
 		SetFlags(c.flags, network.GrpcClientName).
+		SetPlaintext(c.args.plaintext).
 		SetInsecure(c.args.insecure).
 		SetCaPool(c.caPool).
 		SetAddress(c.address).
