@@ -192,8 +192,7 @@ func (c *Config) TokenSource(ctx context.Context) (result auth.TokenSource, err 
 		return
 	}
 
-	// If we are here then there is no way to get tokens, which is an error:
-	err = errors.New("no token source configured")
+	// If we are here then there is no way to get tokens, so it will al be anonymous.
 	return
 }
 
@@ -202,7 +201,8 @@ func (c *Config) Connect(ctx context.Context, flags *pflag.FlagSet) (result *grp
 	// Get the logger:
 	logger := logging.LoggerFromContext(ctx)
 
-	// Create a token source:
+	// Try to create a token source. This will be nil if no token source can be created, which means that the
+	// connection will be anonymous.
 	tokenSource, err := c.TokenSource(ctx)
 	if err != nil {
 		err = fmt.Errorf("failed to create token source: %w", err)

@@ -17,7 +17,6 @@ import (
 	"context"
 	"crypto/x509"
 	"embed"
-	"errors"
 	"fmt"
 	"log/slog"
 	"os"
@@ -243,32 +242,30 @@ func (c *runnerContext) run(cmd *cobra.Command, args []string) error {
 		slog.Any("metadata", metadata),
 	)
 
-	// Select the token issuer
+	// Select the token issuer. The result may be no issuer, which means that no authentication will be used, it
+	// will all be anonoymous.
 	tokenIssuer, err := c.selectTokenIssuer(ctx, metadata.GetAuthn())
 	if err != nil {
 		return fmt.Errorf("failed to select token issuer: %w", err)
 	}
-	c.logger.DebugContext(
-		ctx,
-		"Selected token issuer",
-		slog.String("issuer", tokenIssuer),
-	)
 
 	// Create an empty configuration and a token store that will load/save tokens from/to that configuration:
 	cfg := &config.Config{}
 	c.tokenStore = cfg.TokenStore()
 
-	// Create the token source:
+	// Create the token source only if a token issuer has been selected.
 	tokenSource, err := c.createTokenSource(ctx, tokenIssuer)
 	if err != nil {
 		return fmt.Errorf("failed to create token source: %w", err)
 	}
 
-	// Try to obtain a token using the token source, as this will trigger the authentication flow and verify that
-	// it works correctly.
-	_, err = tokenSource.Token(ctx)
-	if err != nil {
-		return fmt.Errorf("failed to obtain token: %w", err)
+	// If we got a token source, then try to obtain a token using it, as this will trigger the authentication flow
+	// and verify that it works correctly.
+	if tokenSource != nil {
+		_, err = tokenSource.Token(ctx)
+		if err != nil {
+			return fmt.Errorf("failed to obtain token using token source: %w", err)
+		}
 	}
 
 	// Save the basic details of the configuration:
@@ -299,7 +296,7 @@ func (c *runnerContext) run(cmd *cobra.Command, args []string) error {
 
 	// Save the authenticatoin configuration. Note that the OAuth settings are only saved when they are actually
 	// used, and they won't be actually used if the user selected to use a static token or a token script.
-	if c.args.token == "" && c.args.tokenScript == "" {
+	if c.args.token == "" && c.args.tokenScript == "" && tokenIssuer != "" {
 		cfg.OauthIssuer = tokenIssuer
 		cfg.OAuthFlow = oauth.Flow(c.args.oauthFlow)
 		cfg.OAuthClientId = c.args.oauthClientId
@@ -364,11 +361,17 @@ func (c *runnerContext) selectTokenIssuer(ctx context.Context, metadata *metadat
 			)
 		}
 	} else {
-		err = errors.New("server advertises no issuers, and no issuer has been specified in the command line")
+		c.logger.WarnContext(
+			ctx,
+			"Server advertises no issuers",
+			slog.Any("selected", result),
+		)
 	}
 	return
 }
 
+// createTokenSource creates a token source from the configuration. The token source will be nil if no token, token
+// script or token issuer has been specified.
 func (c *runnerContext) createTokenSource(ctx context.Context, tokenIssuer string) (result auth.TokenSource, err error) {
 	// Use a token if specified:
 	if c.args.token != "" {
@@ -397,25 +400,30 @@ func (c *runnerContext) createTokenSource(ctx context.Context, tokenIssuer strin
 		return
 	}
 
-	// Finaly, if no token or token script has been specified, then use OAuth:
-	result, err = oauth.NewTokenSource().
-		SetLogger(c.logger).
-		SetStore(c.tokenStore).
-		SetListener(&oauthFlowListener{
-			runner: c,
-		}).
-		SetInsecure(c.args.insecure).
-		SetCaPool(c.caPool).
-		SetInteractive(true).
-		SetIssuer(tokenIssuer).
-		SetFlow(oauth.Flow(c.args.oauthFlow)).
-		SetClientId(c.args.oauthClientId).
-		SetClientSecret(c.args.oauthClientSecret).
-		SetScopes(c.args.oauthScopes...).
-		Build()
-	if err != nil {
-		err = fmt.Errorf("failed to create OAuth token source: %w", err)
+	// If a token issuer has been selected, then use OAuth to create a token source:
+	if tokenIssuer != "" {
+		result, err = oauth.NewTokenSource().
+			SetLogger(c.logger).
+			SetStore(c.tokenStore).
+			SetListener(&oauthFlowListener{
+				runner: c,
+			}).
+			SetInsecure(c.args.insecure).
+			SetCaPool(c.caPool).
+			SetInteractive(true).
+			SetIssuer(tokenIssuer).
+			SetFlow(oauth.Flow(c.args.oauthFlow)).
+			SetClientId(c.args.oauthClientId).
+			SetClientSecret(c.args.oauthClientSecret).
+			SetScopes(c.args.oauthScopes...).
+			Build()
+		if err != nil {
+			err = fmt.Errorf("failed to create OAuth token source: %w", err)
+		}
 	}
+
+	// Finally, if there is no token, toke script or token issuer, return nil:
+	result = nil
 	return
 }
 
