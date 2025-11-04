@@ -37,12 +37,14 @@ import (
 // use the NewConsole function instead.
 type ConsoleBuilder struct {
 	logger *slog.Logger
+	file   *os.File
 }
 
 // Console is helps writing messages to the console. Don't create objects of this type directly, use the NewConsole
 // function instead.
 type Console struct {
 	logger *slog.Logger
+	file   *os.File
 }
 
 // NewConsole creates a builder that can the be used to create a template engine.
@@ -56,6 +58,13 @@ func (b *ConsoleBuilder) SetLogger(value *slog.Logger) *ConsoleBuilder {
 	return b
 }
 
+// SetFile sets the file that the console will use to write messages to the console. This is optional, the default
+// is to use os.Stdout and there is usually no need to change it; it is intended for unit tests.
+func (b *ConsoleBuilder) SetFile(value *os.File) *ConsoleBuilder {
+	b.file = value
+	return b
+}
+
 // Build uses the configuration stored in the builder to create a new console.
 func (b *ConsoleBuilder) Build() (result *Console, err error) {
 	// Check parameters:
@@ -64,9 +73,16 @@ func (b *ConsoleBuilder) Build() (result *Console, err error) {
 		return
 	}
 
+	// Set the default writer if needed:
+	file := b.file
+	if file == nil {
+		file = os.Stdout
+	}
+
 	// Create and populate the object:
 	result = &Console{
 		logger: b.logger,
+		file:   file,
 	}
 	return
 }
@@ -80,7 +96,7 @@ func (c *Console) Printf(ctx context.Context, format string, args ...any) {
 		slog.Any("args", args),
 		slog.Any("text", text),
 	)
-	_, err := os.Stdout.WriteString(text)
+	_, err := c.file.WriteString(text)
 	if err != nil {
 		c.logger.ErrorContext(
 			ctx,
@@ -157,7 +173,7 @@ func (c *Console) RenderYaml(ctx context.Context, data any) {
 // renderColored renders the given text to stdout with syntax highlighting using the specified lexer. If the terminal
 // doesn't support color or an error occurs, it falls back to plain text output.
 func (c *Console) renderColored(ctx context.Context, text string, format string) error {
-	if isatty.IsTerminal(os.Stdout.Fd()) {
+	if isatty.IsTerminal(c.file.Fd()) {
 		lexer := lexers.Get(format)
 		if lexer == nil {
 			lexer = lexers.Fallback
@@ -178,10 +194,10 @@ func (c *Console) renderColored(ctx context.Context, text string, format string)
 				slog.String("format", format),
 				slog.Any("error", err),
 			)
-			fmt.Fprint(os.Stdout, text)
+			fmt.Fprint(c.file, text)
 			return nil
 		}
-		err = formatter.Format(colorable.NewColorable(os.Stdout), style, iterator)
+		err = formatter.Format(colorable.NewColorable(c.file), style, iterator)
 		if err != nil {
 			c.logger.ErrorContext(
 				ctx,
@@ -189,11 +205,11 @@ func (c *Console) renderColored(ctx context.Context, text string, format string)
 				slog.String("format", format),
 				slog.Any("error", err),
 			)
-			fmt.Fprint(os.Stdout, text)
+			fmt.Fprint(c.file, text)
 			return nil
 		}
 		return nil
 	}
-	fmt.Fprint(os.Stdout, text)
+	fmt.Fprint(c.file, text)
 	return nil
 }

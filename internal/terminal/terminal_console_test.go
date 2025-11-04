@@ -14,6 +14,9 @@ language governing permissions and limitations under the License.
 package terminal
 
 import (
+	"os"
+
+	"github.com/innabox/fulfillment-common/text"
 	. "github.com/onsi/ginkgo/v2/dsl/core"
 	. "github.com/onsi/gomega"
 )
@@ -36,59 +39,155 @@ var _ = Describe("Console", func() {
 		})
 	})
 
-	Describe("RenderYaml", func() {
+	Describe("Render YAML", func() {
 		It("Can render a simple map as YAML", func() {
+			// Ceate a temporary file to write the YAML to:
+			file, err := os.CreateTemp("", "*.test")
+			Expect(err).ToNot(HaveOccurred())
+			defer func() {
+				err := file.Close()
+				Expect(err).ToNot(HaveOccurred())
+			}()
+
+			// Create the console:
 			console, err := NewConsole().
 				SetLogger(logger).
+				SetFile(file).
 				Build()
 			Expect(err).ToNot(HaveOccurred())
 
+			// Render the YAML and verify the result:
 			data := map[string]any{
 				"name":  "test",
 				"value": 123,
 			}
 			console.RenderYaml(ctx, data)
+
+			// Verify the content of the file:
+			content, err := os.ReadFile(file.Name())
+			Expect(err).ToNot(HaveOccurred())
+			Expect(string(content)).To(MatchYAML(text.Dedent(`
+				name: test
+				value: 123
+			`)))
 		})
 
 		It("Can render a slice as YAML", func() {
+			// Ceate a temporary file to write the YAML to:
+			file, err := os.CreateTemp("", "*.test")
+			Expect(err).ToNot(HaveOccurred())
+			defer func() {
+				err := file.Close()
+				Expect(err).ToNot(HaveOccurred())
+			}()
+
+			// Create the console:
 			console, err := NewConsole().
 				SetLogger(logger).
+				SetFile(file).
 				Build()
 			Expect(err).ToNot(HaveOccurred())
 
+			// Render the YAML and verify the result:
 			data := []map[string]any{
-				{"id": "1", "name": "first"},
-				{"id": "2", "name": "second"},
+				{
+					"id":   "1",
+					"name": "first",
+				},
+				{
+					"id":   "2",
+					"name": "second",
+				},
 			}
 			console.RenderYaml(ctx, data)
+
+			// Verify the content of the file:
+			content, err := os.ReadFile(file.Name())
+			Expect(err).ToNot(HaveOccurred())
+			Expect(string(content)).To(MatchYAML(text.Dedent(`
+				- id: "1"
+				  name: first
+				- id: "2"
+				  name: second
+			`)))
 		})
 	})
 
-	Describe("RenderJson", func() {
+	Describe("Render JSON", func() {
 		It("Can render a simple map as JSON", func() {
+			// Ceate a temporary file to write the JSON to:
+			file, err := os.CreateTemp("", "*.test")
+			Expect(err).ToNot(HaveOccurred())
+			defer func() {
+				err := file.Close()
+				Expect(err).ToNot(HaveOccurred())
+			}()
+
+			// Create the console:
 			console, err := NewConsole().
 				SetLogger(logger).
+				SetFile(file).
 				Build()
 			Expect(err).ToNot(HaveOccurred())
 
+			// Render the JSON and verify the result:
 			data := map[string]any{
 				"name":  "test",
 				"value": 123,
 			}
 			console.RenderJson(ctx, data)
+
+			// Verify the content of the file:
+			content, err := os.ReadFile(file.Name())
+			Expect(err).ToNot(HaveOccurred())
+			Expect(string(content)).To(MatchJSON(`{
+				"name": "test",
+				"value": 123
+			}`))
 		})
 
 		It("Can render a slice as JSON", func() {
+			// Ceate a temporary file to write the JSON to:
+			file, err := os.CreateTemp("", "*.test")
+			Expect(err).ToNot(HaveOccurred())
+			defer func() {
+				err := file.Close()
+				Expect(err).ToNot(HaveOccurred())
+			}()
+
+			// Create the console:
 			console, err := NewConsole().
 				SetLogger(logger).
+				SetFile(file).
 				Build()
 			Expect(err).ToNot(HaveOccurred())
 
+			// Render the JSON and verify the result:
 			data := []map[string]any{
-				{"id": "1", "name": "first"},
-				{"id": "2", "name": "second"},
+				{
+					"id":   "1",
+					"name": "first",
+				},
+				{
+					"id":   "2",
+					"name": "second",
+				},
 			}
 			console.RenderJson(ctx, data)
+
+			// Verify the content of the file:
+			content, err := os.ReadFile(file.Name())
+			Expect(err).ToNot(HaveOccurred())
+			Expect(string(content)).To(MatchJSON(`[
+				{
+					"id": "1",
+					"name": "first"
+				},
+				{
+					"id": "2",
+					"name": "second"
+				}
+			]`))
 		})
 	})
 })
