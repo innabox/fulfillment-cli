@@ -192,7 +192,8 @@ func (c *Config) TokenSource(ctx context.Context) (result auth.TokenSource, err 
 		return
 	}
 
-	// If we are here then there is no way to get tokens, so it will al be anonymous.
+	// If we are here then there is no way to get tokens, so it will all be anonymous.
+	result = nil
 	return
 }
 

@@ -420,6 +420,7 @@ func (c *runnerContext) createTokenSource(ctx context.Context, tokenIssuer strin
 		if err != nil {
 			err = fmt.Errorf("failed to create OAuth token source: %w", err)
 		}
+		return
 	}
 
 	// Finally, if there is no token, toke script or token issuer, return nil:
