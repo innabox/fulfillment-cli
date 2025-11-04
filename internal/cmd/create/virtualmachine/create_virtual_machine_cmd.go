@@ -28,8 +28,6 @@ import (
 	"github.com/innabox/fulfillment-common/logging"
 	"github.com/innabox/fulfillment-common/templating"
 	"github.com/spf13/cobra"
-	grpccodes "google.golang.org/grpc/codes"
-	grpcstatus "google.golang.org/grpc/status"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/anypb"
 	"google.golang.org/protobuf/types/known/durationpb"
@@ -66,7 +64,7 @@ func Cmd() *cobra.Command {
 		"template",
 		"t",
 		"",
-		"Template identifier.",
+		"Template identifier or name",
 	)
 	flags.StringSliceVarP(
 		&runner.args.templateParameterValues,
@@ -130,7 +128,7 @@ func (c *runnerContext) run(cmd *cobra.Command, args []string) error {
 
 	// Check that we have a template:
 	if c.args.template == "" {
-		return fmt.Errorf("template identifier is required")
+		return fmt.Errorf("template identifier or name is required")
 	}
 
 	// Create the gRPC connection from the configuration:
@@ -145,35 +143,10 @@ func (c *runnerContext) run(cmd *cobra.Command, args []string) error {
 	c.virtualMachinesClient = ffv1.NewVirtualMachinesClient(conn)
 
 	// Fetch the virtual machine template:
-	templateResponse, err := c.templatesClient.Get(ctx, ffv1.VirtualMachineTemplatesGetRequest_builder{
-		Id: c.args.template,
-	}.Build())
+	template, err := c.findTemplate(ctx)
 	if err != nil {
-		status, ok := grpcstatus.FromError(err)
-		if ok {
-			if status.Code() == grpccodes.NotFound {
-				templatesResponse, err := c.templatesClient.List(ctx, ffv1.VirtualMachineTemplatesListRequest_builder{
-					Limit: proto.Int32(50),
-				}.Build())
-				if err != nil {
-					return fmt.Errorf("failed to list templates: %w", err)
-				}
-				templates := templatesResponse.GetItems()
-				sort.Slice(templates, func(i, j int) bool {
-					return templates[i].GetId() < templates[j].GetId()
-				})
-				c.console.Render(ctx, c.engine, "template_not_found.txt", map[string]any{
-					"Binary":    os.Args[0],
-					"Template":  c.args.template,
-					"Templates": templates,
-				})
-				return exit.Error(1)
-			}
-			return fmt.Errorf("failed to get template '%s': %w", c.args.template, err)
-		}
-		return fmt.Errorf("failed to get template '%s': %w", c.args.template, err)
+		return err
 	}
-	template := templateResponse.Object
 	if template == nil {
 		return exit.Error(1)
 	}
@@ -215,6 +188,62 @@ func (c *runnerContext) run(cmd *cobra.Command, args []string) error {
 	c.console.Printf(ctx, "Created virtual machine '%s'.\n", virtualMachine.Id)
 
 	return nil
+}
+
+// findTemplate finds a virtual machine template by identifier or name. It tries to find by identifier or name using a
+// server-side filter. If there is exactly one match it returns it. If there are multiple matches it displays them to
+// the user and returns an error. If there are no matches it displays available templates and returns an error.
+func (c *runnerContext) findTemplate(ctx context.Context) (result *ffv1.VirtualMachineTemplate, err error) {
+	// Try to find the template by identifier or name using a filter:
+	filter := fmt.Sprintf(
+		"this.id == %[1]s || this.metadata.name == %[1]s",
+		strconv.Quote(c.args.template),
+	)
+	listResponse, err := c.templatesClient.List(ctx, ffv1.VirtualMachineTemplatesListRequest_builder{
+		Filter: proto.String(filter),
+	}.Build())
+	if err != nil {
+		return nil, fmt.Errorf("failed to list templates: %w", err)
+	}
+	templates := listResponse.GetItems()
+
+	// If there is exactly one match, use it:
+	if len(templates) == 1 {
+		result = templates[0]
+		return
+	}
+
+	// If there are multiple matches, display them and advise to use the identifier:
+	if len(templates) > 1 {
+		sort.Slice(templates, func(i, j int) bool {
+			return templates[i].GetId() < templates[j].GetId()
+		})
+		c.console.Render(ctx, c.engine, "template_conflict.txt", map[string]any{
+			"Binary":    os.Args[0],
+			"Template":  c.args.template,
+			"Templates": templates,
+		})
+		return nil, exit.Error(1)
+	}
+
+	// If we are here then no matches were found, we will show to the user some of the available templates:
+	listResponse, err = c.templatesClient.List(ctx, ffv1.VirtualMachineTemplatesListRequest_builder{
+		Limit: proto.Int32(10),
+	}.Build())
+	if err != nil {
+		return nil, fmt.Errorf("failed to list templates: %w", err)
+	}
+	templates = listResponse.GetItems()
+	sort.Slice(templates, func(i, j int) bool {
+		return templates[i].GetId() < templates[j].GetId()
+	})
+	c.console.Render(ctx, c.engine, "template_not_found.txt", map[string]any{
+		"Binary":    os.Args[0],
+		"Template":  c.args.template,
+		"Templates": templates,
+	})
+	result = nil
+	return
 }
 
 // parseTemplateParameters parses the '--template-parameter' and '--template-parameter-file' flags into a map of
@@ -356,8 +385,8 @@ func (c *runnerContext) parseTemplateParameters(ctx context.Context,
 			issues = append(
 				issues,
 				fmt.Sprintf(
-					"In '%s' failed to read file '%s': %w",
-					file, err,
+					"In '%s' failed to read file '%s': %v",
+					flag, file, err,
 				),
 			)
 			continue
@@ -526,7 +555,7 @@ func (c *runnerContext) convertTextToTemplateParameterValue(ctx context.Context,
 			slog.String("kind", kind),
 			slog.Any("error", err),
 		)
-		issue = fmt.Sprintf("Failed to create protobuf value for template parameter: %w", err)
+		issue = fmt.Sprintf("Failed to create protobuf value for template parameter: %v", err)
 		return
 	}
 	return
