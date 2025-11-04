@@ -35,6 +35,8 @@ import (
 	healthv1 "google.golang.org/grpc/health/grpc_health_v1"
 
 	"github.com/innabox/fulfillment-cli/internal/config"
+	"github.com/innabox/fulfillment-cli/internal/exit"
+	internalnetwork "github.com/innabox/fulfillment-cli/internal/network"
 	"github.com/innabox/fulfillment-cli/internal/terminal"
 	metadatav1 "github.com/innabox/fulfillment-common/api/metadata/v1"
 )
@@ -146,6 +148,7 @@ type runnerContext struct {
 	flags      *pflag.FlagSet
 	engine     *templating.Engine
 	address    string
+	plaintext  bool
 	caPool     *x509.CertPool
 	tokenStore auth.TokenStore
 	args       struct {
@@ -195,6 +198,22 @@ func (c *runnerContext) run(cmd *cobra.Command, args []string) error {
 		}
 	}
 
+	// Parse the address:
+	c.address, c.plaintext, err = c.parseAddress(c.address)
+	if err != nil {
+		return fmt.Errorf("failed to parse address: %w", err)
+	}
+
+	// Check if the plaintext flag has been explcitly set, and if it conflicts with the result of parsing the
+	// address. If it does conflict, then explain the issue to the user.
+	if c.flags.Changed("plaintext") && c.plaintext != c.args.plaintext {
+		c.console.Render(ctx, c.engine, "plaintext_conflict.txt", map[string]any{
+			"Address":   c.address,
+			"Plaintext": c.plaintext,
+		})
+		return exit.Error(1)
+	}
+
 	// Create the CA pool:
 	c.caPool, err = network.NewCertPool().
 		SetLogger(c.logger).
@@ -210,7 +229,7 @@ func (c *runnerContext) run(cmd *cobra.Command, args []string) error {
 	grpcConn, err := network.NewGrpcClient().
 		SetLogger(c.logger).
 		SetFlags(c.flags, network.GrpcClientName).
-		SetPlaintext(c.args.plaintext).
+		SetPlaintext(c.plaintext).
 		SetInsecure(c.args.insecure).
 		SetCaPool(c.caPool).
 		SetAddress(c.address).
@@ -269,7 +288,7 @@ func (c *runnerContext) run(cmd *cobra.Command, args []string) error {
 	}
 
 	// Save the basic details of the configuration:
-	cfg.Plaintext = c.args.plaintext
+	cfg.Plaintext = c.plaintext
 	cfg.Insecure = c.args.insecure
 	cfg.Address = c.address
 	cfg.Private = c.args.private
@@ -312,7 +331,7 @@ func (c *runnerContext) run(cmd *cobra.Command, args []string) error {
 	grpcConn, err = network.NewGrpcClient().
 		SetLogger(c.logger).
 		SetFlags(c.flags, network.GrpcClientName).
-		SetPlaintext(c.args.plaintext).
+		SetPlaintext(c.plaintext).
 		SetInsecure(c.args.insecure).
 		SetCaPool(c.caPool).
 		SetAddress(c.address).
@@ -339,6 +358,20 @@ func (c *runnerContext) run(cmd *cobra.Command, args []string) error {
 	}
 
 	return nil
+}
+
+// parseAddress parses the address and returns the address and whether accoding to that address the connection should
+// use plaintext, without TLS.
+func (c *runnerContext) parseAddress(text string) (address string, plaintext bool, err error) {
+	parser, err := internalnetwork.NewAddressParser().
+		SetLogger(c.logger).
+		Build()
+	if err != nil {
+		err = fmt.Errorf("failed to create address parser: %w", err)
+		return
+	}
+	address, plaintext, err = parser.Parse(text)
+	return
 }
 
 func (c *runnerContext) fetchMetadata(ctx context.Context,
