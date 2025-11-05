@@ -170,7 +170,7 @@ func (c *runnerContext) run(cmd *cobra.Command, args []string) error {
 			Name: c.args.name,
 		}.Build(),
 		Spec: ffv1.VirtualMachineSpec_builder{
-			Template:           c.args.template,
+			Template:           template.GetId(),
 			TemplateParameters: templateParameterValues,
 		}.Build(),
 	}.Build()
