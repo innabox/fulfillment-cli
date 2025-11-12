@@ -25,3 +25,7 @@ columns:
 - header: STATE
   value: this.status.state
   type: fulfillment.v1.VirtualMachineState
+
+- header: EXTERNAL-IP
+  value: this.status.ip_address
+  type: fulfillment.v1.VirtualMachineState
