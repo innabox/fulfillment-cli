@@ -11,6 +11,14 @@
 # specific language governing permissions and limitations under the License.
 #
 
+domains:
+
+- name: host_classes
+  type: private.v1.HostClass
+
+- name: clusters
+  type: private.v1.Cluster
+
 columns:
 
 - header: ID
@@ -19,6 +27,15 @@ columns:
 - header: NAME
   value: "has(this.metadata.name)? this.metadata.name: '-'"
 
+- header: CLASS
+  value: lookup("host_classes", this.spec.class)
+
 - header: POWER STATE
   value: this.status.power_state
   type: private.v1.HostPowerState
+
+- header: CLUSTER
+  value: lookup("clusters", this.status.cluster)
+
+- header: RACK
+  value: this.spec.rack

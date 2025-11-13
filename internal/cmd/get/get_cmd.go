@@ -110,12 +110,16 @@ type runnerContext struct {
 		filter         string
 		includeDeleted bool
 	}
+	ctx            context.Context
 	logger         *slog.Logger
 	engine         *templating.Engine
 	console        *terminal.Console
 	conn           *grpc.ClientConn
 	marshalOptions protojson.MarshalOptions
-	helper         *reflection.ObjectHelper
+	globalHelper   *reflection.Helper
+	objectHelper   *reflection.ObjectHelper
+	lookupDomains  map[string]*Domain
+	lookupCache    map[string]map[string]string
 }
 
 func (c *runnerContext) run(cmd *cobra.Command, args []string) error {
@@ -123,6 +127,10 @@ func (c *runnerContext) run(cmd *cobra.Command, args []string) error {
 
 	// Get the context:
 	ctx := cmd.Context()
+
+	// Save the context. This is needed because some of the CEL functions that we create need the context, but
+	// there is no way to pass it directly. Refrain from using tis for other purposes.
+	c.ctx = ctx
 
 	// Get the logger and console:
 	c.logger = logging.LoggerFromContext(ctx)
@@ -145,7 +153,7 @@ func (c *runnerContext) run(cmd *cobra.Command, args []string) error {
 	defer c.conn.Close()
 
 	// Create the reflection helper:
-	helper, err := reflection.NewHelper().
+	c.globalHelper, err = reflection.NewHelper().
 		SetLogger(c.logger).
 		SetConnection(c.conn).
 		AddPackages(cfg.Packages()...).
@@ -167,17 +175,17 @@ func (c *runnerContext) run(cmd *cobra.Command, args []string) error {
 	// Check that the object type has been specified:
 	if len(args) == 0 {
 		c.console.Render(ctx, c.engine, "no_object.txt", map[string]any{
-			"Helper": helper,
+			"Helper": c.globalHelper,
 			"Binary": os.Args[0],
 		})
 		return nil
 	}
 
 	// Get the object helper:
-	c.helper = helper.Lookup(args[0])
-	if c.helper == nil {
+	c.objectHelper = c.globalHelper.Lookup(args[0])
+	if c.objectHelper == nil {
 		c.console.Render(ctx, c.engine, "wrong_object.txt", map[string]any{
-			"Helper": helper,
+			"Helper": c.globalHelper,
 			"Binary": os.Args[0],
 			"Object": args[0],
 		})
@@ -209,6 +217,109 @@ func (c *runnerContext) run(cmd *cobra.Command, args []string) error {
 		render = c.renderTable
 	}
 	return render(ctx, objects)
+}
+
+// createLookupFunc creates a CEL function that performs lookups of object names in domains described in the table
+// definition. The function takes two string parameters: the name of the domain and key to look up. It returns the
+// name of the object whose identifier or name matches the key, or the key itself if no object is found.
+func (c *runnerContext) createLookupFunc() cel.EnvOption {
+	return cel.Function(
+		"lookup",
+		cel.Overload(
+			"lookup_string_string",
+			[]*cel.Type{
+				cel.StringType,
+				cel.StringType,
+			},
+			cel.StringType,
+			cel.BinaryBinding(c.lookupFunc),
+		),
+	)
+}
+
+func (c *runnerContext) lookupFunc(domain, key ref.Val) ref.Val {
+	d, ok := domain.(types.String)
+	if !ok {
+		return types.NewErr("domain parameter must be a string")
+	}
+	k, ok := key.(types.String)
+	if !ok {
+		return types.NewErr("key parameter must be a string")
+	}
+	r := c.lookupImpl(c.ctx, string(d), string(k))
+	return types.String(r)
+}
+
+func (c *runnerContext) lookupImpl(ctx context.Context, domain, key string) (result string) {
+	// Check if the result is already in the cache and return it immediately if so, otherwise
+	// remember to update the cache when done.:
+	domainCache, ok := c.lookupCache[domain]
+	if !ok {
+		domainCache = make(map[string]string)
+		c.lookupCache[domain] = domainCache
+	}
+	result, ok = domainCache[key]
+	if ok {
+		return result
+	}
+	defer func() {
+		domainCache[key] = result
+	}()
+
+	// Check if this is a table-defined domain:
+	lookupDomain, ok := c.lookupDomains[domain]
+	if !ok {
+		result = key
+		return
+	}
+
+	// Look up the object helper for the domain type:
+	objectHelper := c.globalHelper.Lookup(string(lookupDomain.Type))
+	if objectHelper == nil {
+		c.logger.ErrorContext(
+			ctx,
+			"Failed to find object helper for domain type",
+			slog.String("domain", domain),
+			slog.String("type", string(lookupDomain.Type)),
+		)
+		result = key
+		return
+	}
+
+	// Find the objects whose identifier or name matches the key:
+	filter := fmt.Sprintf(
+		`this.id == %[1]s || this.metadata.name == %[1]s`,
+		strconv.Quote(key),
+	)
+	objects, err := objectHelper.List(ctx, reflection.ListOptions{
+		Filter: filter,
+	})
+	if err != nil {
+		c.logger.ErrorContext(
+			ctx,
+			"Failed to list objects for lookup",
+			slog.String("domain", domain),
+			slog.String("type", string(lookupDomain.Type)),
+			slog.String("key", key),
+			slog.Any("error", err),
+		)
+		result = key
+		return
+	}
+
+	// If no objects match, return the key:
+	if len(objects) == 0 {
+		result = key
+		return
+	}
+
+	// Select the first object:
+	object := objects[0]
+
+	// Get the metadata field:
+	metadata := objectHelper.GetMetadata(object)
+	result = metadata.GetName()
+	return
 }
 
 func (c *runnerContext) list(ctx context.Context, keys []string) (results []proto.Message, err error) {
@@ -246,12 +357,12 @@ func (c *runnerContext) list(ctx context.Context, keys []string) (results []prot
 		}
 	}
 
-	results, err = c.helper.List(ctx, options)
+	results, err = c.objectHelper.List(ctx, options)
 	return
 }
 
 func (c *runnerContext) loadTable() (result *Table, err error) {
-	file := fmt.Sprintf("%s.yaml", c.helper.FullName())
+	file := fmt.Sprintf("%s.yaml", c.objectHelper.FullName())
 	data, err := tablesFS.ReadFile(path.Join("tables", file))
 	if err != nil {
 		err = fmt.Errorf(
@@ -313,16 +424,30 @@ func (c *runnerContext) renderTable(ctx context.Context, objects []proto.Message
 		table.Columns = slices.Insert(table.Columns, 1, deletedCol)
 	}
 
-	// Compile the CEL programs:
-	thisDesc := c.helper.Descriptor()
+	// Store the table domains for use in lookup function:
+	c.lookupDomains = make(map[string]*Domain)
+	for _, domain := range table.Domains {
+		c.lookupDomains[domain.Name] = domain
+	}
+
+	// Initialize the lookup cache:
+	c.lookupCache = make(map[string]map[string]string)
+
+	// Add all file descriptors from the current object's package:
+	thisDesc := c.objectHelper.Descriptor()
+
+	// Build CEL environment:
 	celEnv, err := cel.NewEnv(
 		cel.Types(dynamicpb.NewMessage(thisDesc)),
 		cel.Variable("this", cel.ObjectType(string(thisDesc.FullName()))),
 		ext.Strings(),
+		c.createLookupFunc(),
 	)
 	if err != nil {
 		return fmt.Errorf("failed to create CEL environment: %w", err)
 	}
+
+	// Compile the CEL expressions for the columns:
 	prgs := make([]cel.Program, len(table.Columns))
 	for i, col := range table.Columns {
 		ast, issues := celEnv.Compile(col.Value)
@@ -330,14 +455,14 @@ func (c *runnerContext) renderTable(ctx context.Context, objects []proto.Message
 		if err != nil {
 			return fmt.Errorf(
 				"failed to compile CEL expression '%s' for column '%s' of type '%s': %w",
-				col.Value, col.Header, c.helper, err,
+				col.Value, col.Header, c.objectHelper, err,
 			)
 		}
 		prg, err := celEnv.Program(ast)
 		if err != nil {
 			return fmt.Errorf(
 				"failed to create CEL program from expression '%s' for column '%s' of type '%s': %w",
-				col.Value, col.Header, c.helper, err,
+				col.Value, col.Header, c.objectHelper, err,
 			)
 		}
 		prgs[i] = prg
@@ -378,7 +503,7 @@ func (c *runnerContext) renderTableRow(writer io.Writer, cols []*Column, prgs []
 	if err != nil {
 		return fmt.Errorf(
 			"failed to set variables for CEL expression for type '%s': %w",
-			c.helper, err,
+			c.objectHelper, err,
 		)
 	}
 	for i := range len(cols) {
@@ -395,14 +520,14 @@ func (c *runnerContext) renderTableRow(writer io.Writer, cols []*Column, prgs []
 		if err != nil {
 			return fmt.Errorf(
 				"failed to evaluate CEL expression '%s' for column '%s' of type '%s': %w",
-				col.Value, col.Header, c.helper, err,
+				col.Value, col.Header, c.objectHelper, err,
 			)
 		}
 		err = c.renderTableCell(writer, col, out)
 		if err != nil {
 			return fmt.Errorf(
 				"failed to render value '%s' for column '%s' of type '%s': %w",
-				out, col.Header, c.helper, err,
+				out, col.Header, c.objectHelper, err,
 			)
 		}
 	}
