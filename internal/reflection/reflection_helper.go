@@ -45,10 +45,11 @@ const (
 	updateMethodName = protoreflect.Name("Update")
 
 	// Fields:
-	filterFieldName = protoreflect.Name("filter")
-	idFieldName     = protoreflect.Name("id")
-	itemsFieldName  = protoreflect.Name("items")
-	objectFieldName = protoreflect.Name("object")
+	filterFieldName   = protoreflect.Name("filter")
+	idFieldName       = protoreflect.Name("id")
+	itemsFieldName    = protoreflect.Name("items")
+	metadataFieldName = protoreflect.Name("metadata")
+	objectFieldName   = protoreflect.Name("object")
 )
 
 // HelperBuilder contains the data and logic needed to create a reflection helper.
@@ -284,13 +285,20 @@ func (h *Helper) scanService(serviceDesc protoreflect.ServiceDescriptor) {
 	objectNameSingular := strings.ToLower(objectName)
 	objectNamePlural := strings.ToLower(h.pluralizer.Plural(objectName))
 
+	// Get the descriptors of the fields of the object:
+	objectFields := objectDesc.Fields()
+	idFieldDesc := objectFields.ByName(idFieldName)
+	metadataFieldDesc := objectFields.ByName(metadataFieldName)
+
 	// This is a supported object type:
 	helper := ObjectHelper{
-		parent:     h,
-		descriptor: objectDesc,
-		singular:   objectNameSingular,
-		plural:     objectNamePlural,
-		template:   objectTemplate,
+		parent:        h,
+		descriptor:    objectDesc,
+		idField:       idFieldDesc,
+		metadataField: metadataFieldDesc,
+		singular:      objectNameSingular,
+		plural:        objectNamePlural,
+		template:      objectTemplate,
 		get: getInfo{
 			methodInfo: methodInfo{
 				path:     h.makeMethodPath(getDesc),
@@ -468,16 +476,18 @@ func (h *Helper) makeTemplate(messageDesc protoreflect.MessageDescriptor) proto.
 
 // ObjectHelper contains information about a message type that satisfies the conditions to be considered an object.
 type ObjectHelper struct {
-	parent     *Helper
-	descriptor protoreflect.MessageDescriptor
-	singular   string
-	plural     string
-	template   proto.Message
-	list       listInfo
-	get        getInfo
-	create     createInfo
-	update     updateInfo
-	delete     deleteInfo
+	parent        *Helper
+	descriptor    protoreflect.MessageDescriptor
+	singular      string
+	plural        string
+	template      proto.Message
+	list          listInfo
+	get           getInfo
+	create        createInfo
+	update        updateInfo
+	delete        deleteInfo
+	idField       protoreflect.FieldDescriptor
+	metadataField protoreflect.FieldDescriptor
 }
 
 type methodInfo struct {
@@ -571,6 +581,14 @@ func (c *ObjectHelper) Get(ctx context.Context, id string) (result proto.Message
 	}
 	result = c.getObject(response, c.get.object)
 	return
+}
+
+func (c *ObjectHelper) GetId(object proto.Message) string {
+	return object.ProtoReflect().Get(c.idField).String()
+}
+
+func (c *ObjectHelper) GetMetadata(object proto.Message) Metadata {
+	return object.ProtoReflect().Get(c.metadataField).Message().Interface().(Metadata)
 }
 
 func (c *ObjectHelper) Create(ctx context.Context, object proto.Message) (result proto.Message, err error) {

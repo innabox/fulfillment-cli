@@ -17,6 +17,7 @@ import (
 	"context"
 
 	ffv1 "github.com/innabox/fulfillment-common/api/fulfillment/v1"
+	sharedv1 "github.com/innabox/fulfillment-common/api/shared/v1"
 	. "github.com/onsi/ginkgo/v2/dsl/core"
 	. "github.com/onsi/ginkgo/v2/dsl/table"
 	. "github.com/onsi/gomega"
@@ -630,6 +631,37 @@ var _ = Describe("Reflection helper", func() {
 			Expect(objectHelper).ToNot(BeNil())
 			err := objectHelper.Delete(ctx, "pool-123")
 			Expect(err).ToNot(HaveOccurred())
+		})
+
+		It("Returns metadata from get method", func() {
+			// Register a clusters server that responds to the get request with metadata:
+			ffv1.RegisterClustersServer(server.Registrar(), &testing.ClustersServerFuncs{
+				GetFunc: func(ctx context.Context, request *ffv1.ClustersGetRequest,
+				) (response *ffv1.ClustersGetResponse, err error) {
+					defer GinkgoRecover()
+					Expect(request.GetId()).To(Equal("123"))
+					response = ffv1.ClustersGetResponse_builder{
+						Object: ffv1.Cluster_builder{
+							Id: "123",
+							Metadata: sharedv1.Metadata_builder{
+								Name: "my-cluster",
+							}.Build(),
+						}.Build(),
+					}.Build()
+					return
+				},
+			})
+
+			// Start the server:
+			server.Start()
+
+			// Use the helper to send the request, and verify the metadata is returned:
+			objectHelper := helper.Lookup("cluster")
+			Expect(objectHelper).ToNot(BeNil())
+			metadata, err := objectHelper.GetMetadata(ctx, "123")
+			Expect(err).ToNot(HaveOccurred())
+			Expect(metadata).ToNot(BeNil())
+			Expect(metadata.GetName()).To(Equal("my-cluster"))
 		})
 	})
 })

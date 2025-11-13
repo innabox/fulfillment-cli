@@ -19,8 +19,25 @@ import (
 
 // Table describes how to render protocol buffers messages in tabular form.
 type Table struct {
+	// Domains is a list of domains that are available in CEL expressions.
+	Domains []*Domain `yaml:"domains,omitempty"`
+
 	// Columns describes how fields of the message are mapped to columns.
 	Columns []*Column `yaml:"columns,omitempty"`
+}
+
+// Domain describes a domain that is available in CEL expressions. The name is the name of the domain that will be
+// used as the first argument to the 'lookup' function. The type is the type of objects that are membmers of the
+// domain. For example, if the domain is 'templates' and the type is 'private.v1.ClusterTemplate' then the 'lookup'
+// function will be called with the first argument 'templates' and the second argument will be the name or identifier
+// of the template and it will return the identifier.
+type Domain struct {
+	// Name is the name of the domain.
+	Name string `yaml:"name,omitempty"`
+
+	// Type is the type of objects that are members of the domain. This is used to decide which service to query
+	// to get the results.
+	Type protoreflect.FullName `yaml:"type,omitempty"`
 }
 
 // Columns describes how to render a field of a protocol buffers message as a column in a table.
