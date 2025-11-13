@@ -21,10 +21,14 @@ columns:
 
 - header: TEMPLATE
   value: this.spec.template
+  type: private.v1.VirtualMachineTemplate
+  lookup: true
 
 - header: STATE
   value: this.status.state
-  type: fulfillment.v1.ClusterState
+  type: private.v1.VirtualMachineState
 
 - header: HUB
   value: this.status.hub
+  type: private.v1.Hub
+  lookup: true
