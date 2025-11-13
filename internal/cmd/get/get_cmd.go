@@ -110,12 +110,15 @@ type runnerContext struct {
 		filter         string
 		includeDeleted bool
 	}
+	ctx            context.Context
 	logger         *slog.Logger
 	engine         *templating.Engine
 	console        *terminal.Console
 	conn           *grpc.ClientConn
 	marshalOptions protojson.MarshalOptions
-	helper         *reflection.ObjectHelper
+	globalHelper   *reflection.Helper
+	objectHelper   *reflection.ObjectHelper
+	lookupCache    map[protoreflect.FullName]map[string]string
 }
 
 func (c *runnerContext) run(cmd *cobra.Command, args []string) error {
@@ -123,6 +126,10 @@ func (c *runnerContext) run(cmd *cobra.Command, args []string) error {
 
 	// Get the context:
 	ctx := cmd.Context()
+
+	// Save the context. This is needed because some of the CEL functions that we create need the context, but
+	// there is no way to pass it directly. Refrain from using tis for other purposes.
+	c.ctx = ctx
 
 	// Get the logger and console:
 	c.logger = logging.LoggerFromContext(ctx)
@@ -145,7 +152,7 @@ func (c *runnerContext) run(cmd *cobra.Command, args []string) error {
 	defer c.conn.Close()
 
 	// Create the reflection helper:
-	helper, err := reflection.NewHelper().
+	c.globalHelper, err = reflection.NewHelper().
 		SetLogger(c.logger).
 		SetConnection(c.conn).
 		AddPackages(cfg.Packages()...).
@@ -167,17 +174,17 @@ func (c *runnerContext) run(cmd *cobra.Command, args []string) error {
 	// Check that the object type has been specified:
 	if len(args) == 0 {
 		c.console.Render(ctx, c.engine, "no_object.txt", map[string]any{
-			"Helper": helper,
+			"Helper": c.globalHelper,
 			"Binary": os.Args[0],
 		})
 		return nil
 	}
 
 	// Get the object helper:
-	c.helper = helper.Lookup(args[0])
-	if c.helper == nil {
+	c.objectHelper = c.globalHelper.Lookup(args[0])
+	if c.objectHelper == nil {
 		c.console.Render(ctx, c.engine, "wrong_object.txt", map[string]any{
-			"Helper": helper,
+			"Helper": c.globalHelper,
 			"Binary": os.Args[0],
 			"Object": args[0],
 		})
@@ -246,12 +253,12 @@ func (c *runnerContext) list(ctx context.Context, keys []string) (results []prot
 		}
 	}
 
-	results, err = c.helper.List(ctx, options)
+	results, err = c.objectHelper.List(ctx, options)
 	return
 }
 
 func (c *runnerContext) loadTable() (result *Table, err error) {
-	file := fmt.Sprintf("%s.yaml", c.helper.FullName())
+	file := fmt.Sprintf("%s.yaml", c.objectHelper.FullName())
 	data, err := tablesFS.ReadFile(path.Join("tables", file))
 	if err != nil {
 		err = fmt.Errorf(
@@ -313,8 +320,13 @@ func (c *runnerContext) renderTable(ctx context.Context, objects []proto.Message
 		table.Columns = slices.Insert(table.Columns, 1, deletedCol)
 	}
 
-	// Compile the CEL programs:
-	thisDesc := c.helper.Descriptor()
+	// Initialize the lookup cache:
+	c.lookupCache = map[protoreflect.FullName]map[string]string{}
+
+	// Add all file descriptors from the current object's package:
+	thisDesc := c.objectHelper.Descriptor()
+
+	// Build CEL environment:
 	celEnv, err := cel.NewEnv(
 		cel.Types(dynamicpb.NewMessage(thisDesc)),
 		cel.Variable("this", cel.ObjectType(string(thisDesc.FullName()))),
@@ -323,6 +335,8 @@ func (c *runnerContext) renderTable(ctx context.Context, objects []proto.Message
 	if err != nil {
 		return fmt.Errorf("failed to create CEL environment: %w", err)
 	}
+
+	// Compile the CEL expressions for the columns:
 	prgs := make([]cel.Program, len(table.Columns))
 	for i, col := range table.Columns {
 		ast, issues := celEnv.Compile(col.Value)
@@ -330,14 +344,14 @@ func (c *runnerContext) renderTable(ctx context.Context, objects []proto.Message
 		if err != nil {
 			return fmt.Errorf(
 				"failed to compile CEL expression '%s' for column '%s' of type '%s': %w",
-				col.Value, col.Header, c.helper, err,
+				col.Value, col.Header, c.objectHelper, err,
 			)
 		}
 		prg, err := celEnv.Program(ast)
 		if err != nil {
 			return fmt.Errorf(
 				"failed to create CEL program from expression '%s' for column '%s' of type '%s': %w",
-				col.Value, col.Header, c.helper, err,
+				col.Value, col.Header, c.objectHelper, err,
 			)
 		}
 		prgs[i] = prg
@@ -378,7 +392,7 @@ func (c *runnerContext) renderTableRow(writer io.Writer, cols []*Column, prgs []
 	if err != nil {
 		return fmt.Errorf(
 			"failed to set variables for CEL expression for type '%s': %w",
-			c.helper, err,
+			c.objectHelper, err,
 		)
 	}
 	for i := range len(cols) {
@@ -395,14 +409,14 @@ func (c *runnerContext) renderTableRow(writer io.Writer, cols []*Column, prgs []
 		if err != nil {
 			return fmt.Errorf(
 				"failed to evaluate CEL expression '%s' for column '%s' of type '%s': %w",
-				col.Value, col.Header, c.helper, err,
+				col.Value, col.Header, c.objectHelper, err,
 			)
 		}
 		err = c.renderTableCell(writer, col, out)
 		if err != nil {
 			return fmt.Errorf(
 				"failed to render value '%s' for column '%s' of type '%s': %w",
-				out, col.Header, c.helper, err,
+				out, col.Header, c.objectHelper, err,
 			)
 		}
 	}
@@ -417,6 +431,17 @@ func (c *runnerContext) renderTableCell(writer io.Writer, col *Column, val ref.V
 			enumType, _ := protoregistry.GlobalTypes.FindEnumByName(col.Type)
 			if enumType != nil {
 				return c.renderTableCellEnumType(writer, val, enumType.Descriptor())
+			}
+			c.logger.Error(
+				"Failed to find enum type",
+				slog.String("type", string(col.Type)),
+			)
+		}
+	case types.String:
+		if col.Lookup && col.Type != "" {
+			messageType, _ := protoregistry.GlobalTypes.FindMessageByName(col.Type)
+			if messageType != nil {
+				return c.renderTableCellLookup(writer, val, messageType.Descriptor())
 			}
 		}
 	}
@@ -452,6 +477,88 @@ func (c *runnerContext) renderTableCellEnumType(writer io.Writer, val types.Int,
 
 	_, err := fmt.Fprintf(writer, "%s", valueTxt)
 	return err
+}
+
+func (c *runnerContext) renderTableCellLookup(writer io.Writer, val types.String,
+	messageDesc protoreflect.MessageDescriptor) error {
+	text := c.lookupName(c.ctx, messageDesc.FullName(), string(val))
+	if text == "" {
+		text = "-"
+	}
+	_, err := fmt.Fprintf(writer, "%s", text)
+	return err
+}
+
+func (c *runnerContext) lookupName(ctx context.Context, messageFullName protoreflect.FullName,
+	key string) (result string) {
+	// Check if the result is already in the cache and return it immediately if so, otherwise
+	// remember to update the cache when done.:
+	lookupCache, ok := c.lookupCache[messageFullName]
+	if !ok {
+		lookupCache = map[string]string{}
+		c.lookupCache[messageFullName] = lookupCache
+	}
+	result, ok = lookupCache[key]
+	if ok {
+		return result
+	}
+	defer func() {
+		lookupCache[key] = result
+	}()
+
+	// Find the object helper:
+	objectHelper := c.globalHelper.Lookup(string(messageFullName))
+	if objectHelper == nil {
+		c.logger.ErrorContext(
+			ctx,
+			"Failed to find object helper for type",
+			slog.String("type", string(messageFullName)),
+		)
+		result = key
+		return
+	}
+
+	// Find the objects whose identifier or name matches the key:
+	filter := fmt.Sprintf(
+		`this.id == %[1]s || this.metadata.name == %[1]s`,
+		strconv.Quote(key),
+	)
+	objects, err := objectHelper.List(ctx, reflection.ListOptions{
+		Filter: filter,
+	})
+	if err != nil {
+		c.logger.ErrorContext(
+			ctx,
+			"Failed to list objects for lookup",
+			slog.String("type", string(messageFullName)),
+			slog.String("key", key),
+			slog.Any("error", err),
+		)
+		result = key
+		return
+	}
+
+	// If there is no match, or multiple matches, return the original key:
+	if len(objects) == 0 {
+		result = key
+		return
+	}
+
+	// Return the name of the first object:
+	object := objects[0]
+	metadata := objectHelper.GetMetadata(object)
+	if metadata == nil {
+		c.logger.ErrorContext(
+			ctx,
+			"Failed to get metadata for object",
+			slog.String("type", string(messageFullName)),
+			slog.String("key", key),
+		)
+		result = key
+		return
+	}
+	result = metadata.GetName()
+	return
 }
 
 func (c *runnerContext) renderTableCellAnyType(writer io.Writer, val ref.Val) error {

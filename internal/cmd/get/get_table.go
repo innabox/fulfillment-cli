@@ -33,8 +33,20 @@ type Column struct {
 	// the message via the `this` built-in variable.
 	Value string `yaml:"value,omitempty"`
 
-	// Type is the name of a enum type that is the result of evaluationg the expression. This is needed because
-	// CEL doesn't have a notion of enum types: they are all translated to integers. When this is specified the
-	// result of the CEL expression will be then translated into the name of the enum value.
+	// Type is the name of the type of the result of the expression. Thi this only needed when the result of the
+	// expression is an enum value or an identifier that needs to be translated into a type.
+	//
+	// When the result is a enum value, then the 'type' field should contain the name of the enum type, and it
+	// will be used to translate the integer value into th ename of the enum value shortened to elimiate the
+	// prefix common to all the enum values of tat type.
+	//
+	// When the result is an identifier the 'type' field should be the name of the type, and it will be used to
+	// find the name of the object.
 	Type protoreflect.FullName `yaml:"type,omitempty"`
+
+	// Lookup indicates if the result of the expression is an identifier that needs to be translated into a name.
+	// When this is set to true the 'type' field also needs to be specified, and should contain the name of the
+	// type to use for the looup. For example, is the result of the expression is a cluster, then the 'type'
+	// should be 'fulfillment.v1.Cluster'.
+	Lookup bool `yaml:"lookup,omitempty"`
 }
