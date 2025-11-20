@@ -11,11 +11,6 @@
 # specific language governing permissions and limitations under the License.
 #
 
-domains:
-
-- name: templates
-  type: private.v1.ClusterTemplate
-
 columns:
 
 - header: ID
@@ -24,18 +19,5 @@ columns:
 - header: NAME
   value: "has(this.metadata.name)? this.metadata.name: '-'"
 
-- header: TEMPLATE
-  value: lookup("templates", this.spec.template)
-
-- header: STATE
-  value: this.status.state
-  type: fulfillment.v1.ClusterState
-
-- header: HUB
-  value: this.status.hub
-
-- header: API URL
-  value: "has(this.status.api_url)? this.status.api_url: '-'"
-
-- header: CONSOLE URL
-  value: "has(this.status.console_url)? this.status.console_url: '-'"
+- header: TITLE
+  value: this.title
