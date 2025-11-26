@@ -23,6 +23,8 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
+	"time"
 
 	"github.com/innabox/fulfillment-common/logging"
 	"github.com/innabox/fulfillment-common/templating"
@@ -35,6 +37,7 @@ import (
 	"github.com/innabox/fulfillment-cli/internal/config"
 	"github.com/innabox/fulfillment-cli/internal/reflection"
 	"github.com/innabox/fulfillment-cli/internal/terminal"
+	ffv1 "github.com/innabox/fulfillment-common/api/fulfillment/v1"
 )
 
 //go:embed templates
@@ -68,6 +71,13 @@ func Cmd() *cobra.Command {
 			outputFormatJson, outputFormatYaml,
 		),
 	)
+	flags.BoolVarP(
+		&runner.watch,
+		"watch",
+		"w",
+		false,
+		"Watch for changes after update (clusters only)",
+	)
 	return result
 }
 
@@ -76,6 +86,7 @@ type runnerContext struct {
 	engine         *templating.Engine
 	console        *terminal.Console
 	format         string
+	watch          bool
 	conn           *grpc.ClientConn
 	marshalOptions protojson.MarshalOptions
 	helper         *reflection.ObjectHelper
@@ -253,8 +264,13 @@ func (c *runnerContext) run(cmd *cobra.Command, args []string) error {
 	}
 
 	// Save the result:
-	_, err = c.update(ctx, object)
-	return err
+	updated, err := c.update(ctx, object)
+	if err != nil {
+		return err
+	}
+
+	// Show feedback about the update
+	return c.showUpdateFeedback(ctx, updated, objectId)
 }
 
 // findEditor tries to find the name of the editor command. It will first try with the content of the `EDITOR` and
@@ -349,3 +365,158 @@ var editorEnvVars = []string{
 
 // defualtEditor is the editor used when the environment variables don't indicate any other editor.
 const defaultEditor = "vi"
+
+// watchPollInterval is the interval between polls when watching for changes.
+const watchPollInterval = 5 * time.Second
+
+// showUpdateFeedback displays feedback about the update operation, and optionally watches for changes.
+func (c *runnerContext) showUpdateFeedback(ctx context.Context, updated proto.Message, objectId string) error {
+	// Always show confirmation
+	c.console.Printf(ctx, "Updated %s '%s'.\n", c.helper.Singular(), objectId)
+
+	// Check if this is a cluster (only clusters support watch currently)
+	cluster, isCluster := updated.(*ffv1.Cluster)
+	if !isCluster {
+		// For non-cluster objects, just confirm the update
+		return nil
+	}
+
+	// Check if change is in progress
+	if !c.isClusterChanging(cluster) {
+		// No change in progress, we're done
+		return nil
+	}
+
+	// Show that change is in progress
+	c.console.Printf(ctx, "\nChange in progress...\n")
+	c.showClusterConditions(ctx, cluster)
+
+	if c.watch {
+		// Watch mode: poll for status updates
+		return c.watchClusterProgress(ctx, objectId)
+	}
+
+	// Non-watch mode: tell user how to check progress
+	c.console.Printf(ctx, "\nUse '%s get %s %s' to check progress.\n",
+		os.Args[0], c.helper.Singular(), objectId)
+
+	return nil
+}
+
+// isClusterChanging checks if a cluster has changes in progress by comparing desired spec vs actual status.
+// Note: The cluster state remains READY during scaling operations, so we cannot rely on checking the state.
+// Instead, we compare spec.node_sets vs status.node_sets to detect ongoing changes.
+func (c *runnerContext) isClusterChanging(cluster *ffv1.Cluster) bool {
+	for name, desired := range cluster.Spec.NodeSets {
+		actual, exists := cluster.Status.NodeSets[name]
+		if !exists || desired.Size != actual.Size {
+			return true
+		}
+	}
+
+	return false
+}
+
+// showClusterConditions displays cluster conditions with their messages.
+func (c *runnerContext) showClusterConditions(ctx context.Context, cluster *ffv1.Cluster) {
+	if cluster.Status == nil || cluster.Status.Conditions == nil {
+		return
+	}
+
+	for _, cond := range cluster.Status.Conditions {
+		// Show any condition with a message, regardless of status
+		// TRUE status means "this is happening", FALSE means "this is NOT happening (blocked)"
+		if cond.Message != nil && *cond.Message != "" {
+			c.console.Printf(ctx, "  %s\n", *cond.Message)
+		}
+	}
+}
+
+// watchClusterProgress polls the cluster status and displays progress until it reaches a terminal state.
+func (c *runnerContext) watchClusterProgress(ctx context.Context, objectId string) error {
+	c.console.Printf(ctx, "\nWatching for changes (Ctrl+C to stop)...\n\n")
+
+	lastState := ""
+	shownMessages := make(map[string]bool)
+
+	// Do an immediate poll before starting the ticker
+	done, err := c.pollClusterStatus(ctx, objectId, &lastState, shownMessages)
+	if err != nil {
+		return err
+	}
+	if done {
+		return nil
+	}
+
+	ticker := time.NewTicker(watchPollInterval)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-ticker.C:
+			done, err := c.pollClusterStatus(ctx, objectId, &lastState, shownMessages)
+			if err != nil {
+				return err
+			}
+			if done {
+				return nil
+			}
+		}
+	}
+}
+
+// pollClusterStatus polls the cluster once and displays any status updates.
+// Returns (true, nil) if polling should stop, (false, nil) to continue, or (false, err) on error.
+func (c *runnerContext) pollClusterStatus(ctx context.Context, objectId string, lastState *string, shownMessages map[string]bool) (bool, error) {
+	// Poll for current status
+	current, err := c.helper.Get(ctx, objectId)
+	if err != nil {
+		c.logger.WarnContext(
+			ctx,
+			"Failed to get status",
+			slog.String("id", objectId),
+			slog.Any("error", err),
+		)
+		return false, nil
+	}
+
+	cluster, ok := current.(*ffv1.Cluster)
+	if !ok {
+		c.logger.ErrorContext(ctx, "Unexpected object type")
+		return false, fmt.Errorf("unexpected object type")
+	}
+
+	// Show state changes
+	stateStr := cluster.Status.State.String()
+	if stateStr != *lastState {
+		timestamp := time.Now().Format(time.TimeOnly)
+		displayState := strings.TrimPrefix(stateStr, "CLUSTER_STATE_")
+		c.console.Printf(ctx, "[%s] State: %s\n", timestamp, displayState)
+		*lastState = stateStr
+	}
+
+	// Show new condition messages
+	if cluster.Status.Conditions != nil {
+		for _, cond := range cluster.Status.Conditions {
+			// Show any condition with a message, regardless of status
+			if cond.Message != nil && *cond.Message != "" {
+				// Only show each unique message once
+				if !shownMessages[*cond.Message] {
+					timestamp := time.Now().Format(time.TimeOnly)
+					c.console.Printf(ctx, "[%s] %s\n", timestamp, *cond.Message)
+					shownMessages[*cond.Message] = true
+				}
+			}
+		}
+	}
+
+	// Check if changes are complete (spec matches status)
+	if !c.isClusterChanging(cluster) {
+		c.console.Printf(ctx, "\nCluster update complete.\n")
+		return true, nil
+	}
+
+	return false, nil
+}
