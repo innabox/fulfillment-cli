@@ -11,4 +11,4 @@ These are the first {{ len .Ids }}:
 To avoid this ambiguity use the identifier, for example, to get the kubeconfig
 for cluster '{{ index .Ids 0 }}' use the following command:
 
-{{ .Binary }} get kubeconfig --cluster {{ index .Ids 0 }}
+{{ .Binary }} get kubeconfig {{ index .Ids 0 }}
