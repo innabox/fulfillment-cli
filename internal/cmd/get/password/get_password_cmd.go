@@ -14,16 +14,29 @@ language governing permissions and limitations under the License.
 package password
 
 import (
+	"embed"
 	"fmt"
 	"log/slog"
+	"os"
+	"slices"
+	"sort"
+	"strconv"
 
 	ffv1 "github.com/innabox/fulfillment-common/api/fulfillment/v1"
 	"github.com/innabox/fulfillment-common/logging"
+	"github.com/innabox/fulfillment-common/templating"
 	"github.com/spf13/cobra"
+	"github.com/spf13/pflag"
 	"google.golang.org/grpc"
+	"google.golang.org/protobuf/proto"
 
 	"github.com/innabox/fulfillment-cli/internal/config"
+	"github.com/innabox/fulfillment-cli/internal/exit"
+	"github.com/innabox/fulfillment-cli/internal/terminal"
 )
+
+//go:embed templates
+var templatesFS embed.FS
 
 func Cmd() *cobra.Command {
 	runner := &runnerContext{}
@@ -34,18 +47,23 @@ func Cmd() *cobra.Command {
 	}
 	flags := result.Flags()
 	flags.StringVar(
-		&runner.cluster,
+		&runner.args.key,
 		"cluster",
 		"",
-		"Identifier of the cluster. This is mandatory.",
+		"Name or identifier of the cluster. This is mandatory.",
 	)
 	return result
 }
 
 type runnerContext struct {
 	logger  *slog.Logger
-	cluster string
+	flags   *pflag.FlagSet
+	console *terminal.Console
+	engine  *templating.Engine
 	conn    *grpc.ClientConn
+	args    struct {
+		key string
+	}
 }
 
 func (c *runnerContext) run(cmd *cobra.Command, args []string) error {
@@ -54,8 +72,12 @@ func (c *runnerContext) run(cmd *cobra.Command, args []string) error {
 	// Get the context:
 	ctx := cmd.Context()
 
-	// Get the logger:
+	// Get the logger and flags:
 	c.logger = logging.LoggerFromContext(ctx)
+	c.console = terminal.ConsoleFromContext(ctx)
+
+	// Get the flags:
+	c.flags = cmd.Flags()
 
 	// Get the configuration:
 	cfg, err := config.Load(ctx)
@@ -67,26 +89,78 @@ func (c *runnerContext) run(cmd *cobra.Command, args []string) error {
 	}
 
 	// Create the gRPC connection from the configuration:
-	c.conn, err = cfg.Connect(ctx, cmd.Flags())
+	c.conn, err = cfg.Connect(ctx, c.flags)
 	if err != nil {
 		return fmt.Errorf("failed to create gRPC connection: %w", err)
 	}
 	defer c.conn.Close()
 
+	// Create the templating engine:
+	c.engine, err = templating.NewEngine().
+		SetLogger(c.logger).
+		SetFS(templatesFS).
+		SetDir("templates").
+		Build()
+	if err != nil {
+		return fmt.Errorf("failed to create templating engine: %w", err)
+	}
+
 	// Check the flags:
-	if c.cluster == "" {
-		return fmt.Errorf("it is mandatory to specify the cluster identifier with the '--cluster' option")
+	if c.args.key == "" {
+		c.console.Render(ctx, c.engine, "no_key.txt", map[string]any{
+			"Binary": os.Args[0],
+		})
+		return exit.Error(1)
+	}
+
+	// Try to find a cluster that has an identifier or name matching the given identifier:
+	client := ffv1.NewClustersClient(c.conn)
+	listFilter := fmt.Sprintf(
+		"this.id == %[1]s || this.metadata.name == %[1]s",
+		strconv.Quote(c.args.key),
+	)
+	listResponse, err := client.List(ctx, ffv1.ClustersListRequest_builder{
+		Filter: proto.String(listFilter),
+		Limit:  proto.Int32(10),
+	}.Build())
+	if err != nil {
+		return fmt.Errorf("failed to list clusters: %w", err)
+	}
+	total := listResponse.GetTotal()
+	clusters := listResponse.GetItems()
+	var cluster *ffv1.Cluster
+	switch {
+	case total == 0:
+		c.console.Render(ctx, c.engine, "no_match.txt", map[string]any{
+			"Key": c.args.key,
+		})
+		return exit.Error(1)
+	case total == 1:
+		cluster = clusters[0]
+	default:
+		ids := make([]string, len(clusters))
+		for i, cluster := range clusters {
+			ids[i] = cluster.GetId()
+		}
+		sort.Strings(ids)
+		ids = slices.Compact(ids)
+		c.console.Render(ctx, c.engine, "multiple_matches.txt", map[string]any{
+			"Binary": os.Args[0],
+			"Ids":    ids,
+			"Key":    c.args.key,
+			"Total":  total,
+		})
+		return exit.Error(1)
 	}
 
 	// Get the password:
-	client := ffv1.NewClustersClient(c.conn)
-	response, err := client.GetPassword(ctx, ffv1.ClustersGetPasswordRequest_builder{
-		Id: c.cluster,
+	getPasswordResponse, err := client.GetPassword(ctx, ffv1.ClustersGetPasswordRequest_builder{
+		Id: cluster.GetId(),
 	}.Build())
 	if err != nil {
 		return err
 	}
-	fmt.Printf("%s\n", response.Password)
+	fmt.Printf("%s\n", getPasswordResponse.GetPassword())
 
 	return nil
 }

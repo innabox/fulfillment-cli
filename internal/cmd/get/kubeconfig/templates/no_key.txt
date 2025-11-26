@@ -1,0 +1,6 @@
+You must specify the name or identifier of the cluster with the '--cluster' option. For example
+to get the kubeconfig of cluster '123':
+
+{{ .Binary }} get kubeconfig --cluster 123
+
+Use the '--help' option to get more details about the command.
