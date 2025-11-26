@@ -41,7 +41,7 @@ var templatesFS embed.FS
 func Cmd() *cobra.Command {
 	runner := &runnerContext{}
 	result := &cobra.Command{
-		Use:   "password [OPTION]...",
+		Use:   "password [CLUSTER] [OPTION]...",
 		Short: "Get password",
 		RunE:  runner.run,
 	}
@@ -50,8 +50,9 @@ func Cmd() *cobra.Command {
 		&runner.args.key,
 		"cluster",
 		"",
-		"Name or identifier of the cluster. This is mandatory.",
+		"Name or identifier of the cluster.",
 	)
+	flags.MarkDeprecated("cluster", "use positional argument instead.\n")
 	return result
 }
 
@@ -105,8 +106,14 @@ func (c *runnerContext) run(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("failed to create templating engine: %w", err)
 	}
 
+	// Get the cluster name or identifier: from the flag if provided, otherwise from the first positional argument.
+	key := c.args.key
+	if key == "" && len(args) > 0 {
+		key = args[0]
+	}
+
 	// Check the flags:
-	if c.args.key == "" {
+	if key == "" {
 		c.console.Render(ctx, c.engine, "no_key.txt", map[string]any{
 			"Binary": os.Args[0],
 		})
@@ -117,7 +124,7 @@ func (c *runnerContext) run(cmd *cobra.Command, args []string) error {
 	client := ffv1.NewClustersClient(c.conn)
 	listFilter := fmt.Sprintf(
 		"this.id == %[1]s || this.metadata.name == %[1]s",
-		strconv.Quote(c.args.key),
+		strconv.Quote(key),
 	)
 	listResponse, err := client.List(ctx, ffv1.ClustersListRequest_builder{
 		Filter: proto.String(listFilter),
@@ -132,7 +139,7 @@ func (c *runnerContext) run(cmd *cobra.Command, args []string) error {
 	switch {
 	case total == 0:
 		c.console.Render(ctx, c.engine, "no_match.txt", map[string]any{
-			"Key": c.args.key,
+			"Key": key,
 		})
 		return exit.Error(1)
 	case total == 1:
@@ -147,7 +154,7 @@ func (c *runnerContext) run(cmd *cobra.Command, args []string) error {
 		c.console.Render(ctx, c.engine, "multiple_matches.txt", map[string]any{
 			"Binary": os.Args[0],
 			"Ids":    ids,
-			"Key":    c.args.key,
+			"Key":    key,
 			"Total":  total,
 		})
 		return exit.Error(1)
