@@ -21,6 +21,7 @@ import (
 
 	"github.com/innabox/fulfillment-common/logging"
 	"github.com/spf13/cobra"
+	"google.golang.org/protobuf/proto"
 
 	"github.com/innabox/fulfillment-cli/internal/config"
 	ffv1 "github.com/innabox/fulfillment-common/api/fulfillment/v1"
@@ -31,7 +32,7 @@ func Cmd() *cobra.Command {
 	runner := &runnerContext{}
 	result := &cobra.Command{
 		Use:     "hostpool [flags]",
-		Aliases: []string{"fulfillment.v1.HostPool"},
+		Aliases: []string{string(proto.MessageName((*ffv1.HostPool)(nil)))},
 		Short:   "Create a host pool",
 		RunE:    runner.run,
 	}

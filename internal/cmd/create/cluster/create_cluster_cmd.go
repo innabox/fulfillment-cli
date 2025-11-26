@@ -48,7 +48,7 @@ func Cmd() *cobra.Command {
 	runner := &runnerContext{}
 	result := &cobra.Command{
 		Use:     "cluster [flags]",
-		Aliases: []string{"fulfillment.v1.Cluster"},
+		Aliases: []string{string(proto.MessageName((*ffv1.Cluster)(nil)))},
 		Short:   "Create a cluster",
 		RunE:    runner.run,
 	}

@@ -48,7 +48,7 @@ func Cmd() *cobra.Command {
 	runner := &runnerContext{}
 	result := &cobra.Command{
 		Use:     "virtualmachine [flags]",
-		Aliases: []string{"fulfillment.v1.VirtualMachine"},
+		Aliases: []string{string(proto.MessageName((*ffv1.VirtualMachine)(nil)))},
 		Short:   "Create a virtual machine",
 		RunE:    runner.run,
 	}
