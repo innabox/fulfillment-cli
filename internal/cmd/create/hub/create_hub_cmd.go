@@ -18,6 +18,7 @@ import (
 	"os"
 
 	"github.com/spf13/cobra"
+	"google.golang.org/protobuf/proto"
 
 	"github.com/innabox/fulfillment-cli/internal/config"
 	"github.com/innabox/fulfillment-cli/internal/terminal"
@@ -28,7 +29,7 @@ func Cmd() *cobra.Command {
 	runner := &runnerContext{}
 	result := &cobra.Command{
 		Use:     "hub",
-		Aliases: []string{"private.v1.Hub"},
+		Aliases: []string{string(proto.MessageName((*privatev1.Hub)(nil)))},
 		Short:   "Create a hub",
 		RunE:    runner.run,
 	}
