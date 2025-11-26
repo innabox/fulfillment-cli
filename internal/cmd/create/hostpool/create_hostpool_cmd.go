@@ -30,9 +30,10 @@ import (
 func Cmd() *cobra.Command {
 	runner := &runnerContext{}
 	result := &cobra.Command{
-		Use:   "hostpool [flags]",
-		Short: "Create a host pool",
-		RunE:  runner.run,
+		Use:     "hostpool [flags]",
+		Aliases: []string{"fulfillment.v1.HostPool"},
+		Short:   "Create a host pool",
+		RunE:    runner.run,
 	}
 	flags := result.Flags()
 	flags.StringVarP(

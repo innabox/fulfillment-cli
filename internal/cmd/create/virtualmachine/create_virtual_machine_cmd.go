@@ -47,9 +47,10 @@ var templatesFS embed.FS
 func Cmd() *cobra.Command {
 	runner := &runnerContext{}
 	result := &cobra.Command{
-		Use:   "virtualmachine [flags]",
-		Short: "Create a virtual machine",
-		RunE:  runner.run,
+		Use:     "virtualmachine [flags]",
+		Aliases: []string{"fulfillment.v1.VirtualMachine"},
+		Short:   "Create a virtual machine",
+		RunE:    runner.run,
 	}
 	flags := result.Flags()
 	flags.StringVarP(

@@ -27,9 +27,10 @@ import (
 func Cmd() *cobra.Command {
 	runner := &runnerContext{}
 	result := &cobra.Command{
-		Use:   "hub",
-		Short: "Create a hub",
-		RunE:  runner.run,
+		Use:     "hub",
+		Aliases: []string{"private.v1.Hub"},
+		Short:   "Create a hub",
+		RunE:    runner.run,
 	}
 	flags := result.Flags()
 	flags.StringVar(
