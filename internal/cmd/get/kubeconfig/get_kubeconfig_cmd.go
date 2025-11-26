@@ -29,6 +29,7 @@ import (
 	"github.com/spf13/pflag"
 	"google.golang.org/grpc"
 	"google.golang.org/protobuf/proto"
+	"gopkg.in/yaml.v3"
 
 	"github.com/innabox/fulfillment-cli/internal/config"
 	"github.com/innabox/fulfillment-cli/internal/exit"
@@ -160,7 +161,19 @@ func (c *runnerContext) run(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return err
 	}
-	fmt.Printf("%s\n", getKubeconfigResponse.GetKubeconfig())
+	kcText := getKubeconfigResponse.GetKubeconfig()
+	var kcYaml any
+	err = yaml.Unmarshal([]byte(kcText), &kcYaml)
+	if err != nil {
+		c.logger.ErrorContext(
+			ctx,
+			"Failed to unmarshal kubeconfig",
+			slog.Any("error", err),
+		)
+		c.console.Printf(ctx, "%s\n", kcText)
+	} else {
+		c.console.RenderYaml(ctx, kcYaml)
+	}
 
 	return nil
 }
