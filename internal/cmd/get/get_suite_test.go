@@ -14,8 +14,10 @@ language governing permissions and limitations under the License.
 package get
 
 import (
+	"log/slog"
 	"testing"
 
+	"github.com/innabox/fulfillment-common/logging"
 	. "github.com/onsi/ginkgo/v2/dsl/core"
 	. "github.com/onsi/gomega"
 )
@@ -24,3 +26,14 @@ func TestGet(t *testing.T) {
 	RegisterFailHandler(Fail)
 	RunSpecs(t, "Get")
 }
+
+var logger *slog.Logger
+
+var _ = BeforeSuite(func() {
+	var err error
+	logger, err = logging.NewLogger().
+		SetLevel(slog.LevelDebug.String()).
+		SetWriter(GinkgoWriter).
+		Build()
+	Expect(err).ToNot(HaveOccurred())
+})

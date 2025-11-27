@@ -17,6 +17,7 @@ import (
 	"context"
 	"net"
 
+	eventsv1 "github.com/innabox/fulfillment-common/api/events/v1"
 	ffv1 "github.com/innabox/fulfillment-common/api/fulfillment/v1"
 	. "github.com/onsi/ginkgo/v2/dsl/core"
 	. "github.com/onsi/gomega"
@@ -213,4 +214,19 @@ func (s *HostPoolsServerFuncs) Update(ctx context.Context,
 	request *ffv1.HostPoolsUpdateRequest) (response *ffv1.HostPoolsUpdateResponse, err error) {
 	response, err = s.UpdateFunc(ctx, request)
 	return
+}
+
+// Make sure that we implement the interface.
+var _ eventsv1.EventsServer = (*EventsServerFuncs)(nil)
+
+// EventsServerFuncs is an implementation of the events server that uses configurable functions to implement the
+// methods.
+type EventsServerFuncs struct {
+	eventsv1.UnimplementedEventsServer
+
+	WatchFunc func(*eventsv1.EventsWatchRequest, eventsv1.Events_WatchServer) error
+}
+
+func (s *EventsServerFuncs) Watch(request *eventsv1.EventsWatchRequest, stream eventsv1.Events_WatchServer) error {
+	return s.WatchFunc(request, stream)
 }
