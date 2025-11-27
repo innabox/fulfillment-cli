@@ -55,9 +55,9 @@ type ConditionData struct {
 
 // YAML parsing structures - used only for loading from YAML files
 type scenarioFile struct {
-	Name        string        `yaml:"name"`
-	Description string        `yaml:"description"`
-	Events      []*eventFile  `yaml:"events"`
+	Name        string       `yaml:"name"`
+	Description string       `yaml:"description"`
+	Events      []*eventFile `yaml:"events"`
 }
 
 type eventFile struct {

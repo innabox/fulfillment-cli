@@ -34,7 +34,7 @@ import (
 )
 
 const (
-	serverPort           = "8080"
+	serverPort          = "8080"
 	defaultScenarioFile = "internal/testing/testdata/cluster-lifecycle.yaml"
 )
 
