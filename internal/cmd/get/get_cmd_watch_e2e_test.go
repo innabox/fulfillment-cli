@@ -57,58 +57,35 @@ var _ = Describe("Watch e2e", func() {
 		server = testing.NewServer()
 		DeferCleanup(server.Stop)
 
-		// Create events server that will send test events
-		eventsServer = &testing.EventsServerFuncs{
-			WatchFunc: func(request *eventsv1.EventsWatchRequest, stream eventsv1.Events_WatchServer) error {
-				// Send a cluster created event
-				err := stream.Send(&eventsv1.EventsWatchResponse{
-					Event: &eventsv1.Event{
-						Id:   "event-1",
-						Type: eventsv1.EventType_EVENT_TYPE_OBJECT_CREATED,
-						Payload: &eventsv1.Event_Cluster{
-							Cluster: &ffv1.Cluster{
-								Id: "test-cluster-1",
-								Metadata: &sharedv1.Metadata{
-									Name: "my-cluster",
-								},
-								Status: &ffv1.ClusterStatus{
-									State: ffv1.ClusterState_CLUSTER_STATE_PROGRESSING,
-								},
+		// Create test scenario structure
+		scenario := &testing.EventScenario{
+			Name:        "test-scenario",
+			Description: "Test scenario for watch e2e",
+			Events: []*testing.ScenarioEvent{
+				{
+					ID:           "event-1",
+					Type:         eventsv1.EventType_EVENT_TYPE_OBJECT_CREATED,
+					DelaySeconds: 0,
+					Cluster: &testing.ClusterEventData{
+						ID:    "test-cluster-1",
+						Name:  "my-test-cluster",
+						State: ffv1.ClusterState_CLUSTER_STATE_PROGRESSING,
+						Conditions: []*testing.ConditionData{
+							{
+								Type:    ffv1.ClusterConditionType_CLUSTER_CONDITION_TYPE_READY,
+								Status:  sharedv1.ConditionStatus_CONDITION_STATUS_FALSE,
+								Message: "Cluster is being created",
 							},
 						},
 					},
-				})
-				if err != nil {
-					return err
-				}
-
-				// Send a cluster updated event
-				err = stream.Send(&eventsv1.EventsWatchResponse{
-					Event: &eventsv1.Event{
-						Id:   "event-2",
-						Type: eventsv1.EventType_EVENT_TYPE_OBJECT_UPDATED,
-						Payload: &eventsv1.Event_Cluster{
-							Cluster: &ffv1.Cluster{
-								Id: "test-cluster-1",
-								Metadata: &sharedv1.Metadata{
-									Name: "my-cluster",
-								},
-								Status: &ffv1.ClusterStatus{
-									State: ffv1.ClusterState_CLUSTER_STATE_READY,
-								},
-							},
-						},
-					},
-				})
-				if err != nil {
-					return err
-				}
-
-				// Wait for context cancellation
-				<-stream.Context().Done()
-				return stream.Context().Err()
+				},
 			},
 		}
+
+		// Create events server using the builder with test scenario
+		eventsServer = testing.NewMockEventsServerBuilder().
+			WithScenario(scenario).
+			Build()
 
 		// Register the events server
 		eventsv1.RegisterEventsServer(server.Registrar(), eventsServer)
