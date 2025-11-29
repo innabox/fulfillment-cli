@@ -101,6 +101,13 @@ func Cmd() *cobra.Command {
 		false,
 		"Include deleted objects.",
 	)
+	flags.BoolVarP(
+		&runner.args.watch,
+		"watch",
+		"w",
+		false,
+		"Watch for changes to objects",
+	)
 	return result
 }
 
@@ -109,6 +116,7 @@ type runnerContext struct {
 		format         string
 		filter         string
 		includeDeleted bool
+		watch          bool
 	}
 	ctx            context.Context
 	logger         *slog.Logger
@@ -197,6 +205,11 @@ func (c *runnerContext) run(cmd *cobra.Command, args []string) error {
 			"unknown output format '%s', should be '%s', '%s' or '%s'",
 			c.args.format, outputFormatTable, outputFormatJson, outputFormatYaml,
 		)
+	}
+
+	// If watch mode is enabled, watch for events instead of listing
+	if c.args.watch {
+		return c.watch(ctx, args[1:])
 	}
 
 	// Get the objects using the list method, which will handle filtering by identifiers or names if provided.

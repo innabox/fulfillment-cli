@@ -1,0 +1,43 @@
+name: cluster-lifecycle
+description: Complete cluster creation and ready lifecycle
+events:
+  - id: event-1
+    type: EVENT_TYPE_OBJECT_CREATED
+    delaySeconds: 0
+    cluster:
+      id: test-cluster-1
+      name: my-test-cluster
+      state: CLUSTER_STATE_PROGRESSING
+      conditions:
+        - type: CLUSTER_CONDITION_TYPE_READY
+          status: CONDITION_STATUS_FALSE
+          message: Cluster is being created
+  - id: event-2
+    type: EVENT_TYPE_OBJECT_UPDATED
+    delaySeconds: 3
+    cluster:
+      id: test-cluster-1
+      name: my-test-cluster
+      state: CLUSTER_STATE_PROGRESSING
+      conditions:
+        - type: CLUSTER_CONDITION_TYPE_READY
+          status: CONDITION_STATUS_FALSE
+          message: Installing control plane...
+  - id: event-3
+    type: EVENT_TYPE_OBJECT_UPDATED
+    delaySeconds: 3
+    cluster:
+      id: test-cluster-1
+      name: my-test-cluster
+      state: CLUSTER_STATE_READY
+      conditions:
+        - type: CLUSTER_CONDITION_TYPE_READY
+          status: CONDITION_STATUS_TRUE
+          message: Cluster is ready to use
+  - id: event-4
+    type: EVENT_TYPE_OBJECT_CREATED
+    delaySeconds: 2
+    cluster:
+      id: test-cluster-2
+      name: another-cluster
+      state: CLUSTER_STATE_PROGRESSING
