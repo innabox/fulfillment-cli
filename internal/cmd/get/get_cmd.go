@@ -481,8 +481,11 @@ func (c *runnerContext) renderTableCellEnumType(writer io.Writer, val types.Int,
 
 func (c *runnerContext) renderTableCellLookup(writer io.Writer, val types.String,
 	messageDesc protoreflect.MessageDescriptor) error {
-	text := c.lookupName(c.ctx, messageDesc.FullName(), string(val))
-	if text == "" {
+	key := string(val)
+	var text string
+	if key != "" {
+		text = c.lookupName(c.ctx, messageDesc.FullName(), key)
+	} else {
 		text = "-"
 	}
 	_, err := fmt.Fprintf(writer, "%s", text)
