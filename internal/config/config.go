@@ -240,11 +240,22 @@ func (c *Config) Connect(ctx context.Context, flags *pflag.FlagSet) (result *grp
 
 // Packages returns the list of packages that should be enabled according to the configuration. The public packages
 // will always be enabled, but the private packages will be enabled only if the `private` flag is true.
-func (c *Config) Packages() []string {
-	if c.Private {
-		return packages.All
+//
+// The packages are returned as a map, where the key is the name of the package and the value is an integer indicating
+// the relative order of the types of the package order of the package when presented to the user. For example, if the
+// package 'private.v1' has order 1 and package 'fulfillment.v1' has order 2, then the types of the 'private.v1' should
+// be presented first, even if the alphabetical order would put the 'fulfillment.v1' types first.
+func (c *Config) Packages() map[string]int {
+	result := map[string]int{}
+	for _, name := range packages.Public {
+		result[name] = 1
 	}
-	return packages.Public
+	if c.Private {
+		for _, name := range packages.Private {
+			result[name] = 0
+		}
+	}
+	return result
 }
 
 // TokenStore returns an implementation of the auth.TokenStore interface that loads and saves tokens from/to

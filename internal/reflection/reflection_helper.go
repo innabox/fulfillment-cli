@@ -58,7 +58,7 @@ const (
 type HelperBuilder struct {
 	logger     *slog.Logger
 	connection *grpc.ClientConn
-	packages   []string
+	packages   map[string]int
 }
 
 // Helper simplifies use of the protocol buffers reflection facility. It knows how to extract from the descriptors the
@@ -69,7 +69,7 @@ type HelperBuilder struct {
 type Helper struct {
 	logger     *slog.Logger
 	connection *grpc.ClientConn
-	packages   map[protoreflect.FullName]bool
+	packages   map[protoreflect.FullName]int
 	scanOnce   *sync.Once
 	pluralizer *pluralize.Client
 	helpers    []ObjectHelper
@@ -92,15 +92,25 @@ func (b *HelperBuilder) SetConnection(value *grpc.ClientConn) *HelperBuilder {
 	return b
 }
 
-// AddPackage adds a protobuf package that will be scanned looking for types and services.
-func (b *HelperBuilder) AddPackage(value string) *HelperBuilder {
-	b.packages = append(b.packages, value)
+// AddPackage adds a protobuf package that will be scanned looking for types and services. The order parameter is
+// used to specify the relative order of the package when presented to the user.
+func (b *HelperBuilder) AddPackage(name string, order int) *HelperBuilder {
+	if b.packages == nil {
+		b.packages = make(map[string]int)
+	}
+	b.packages[name] = order
 	return b
 }
 
-// AddPackages adds a list of protobuf packages that will be scanned looking for types and services.
-func (b *HelperBuilder) AddPackages(values ...string) *HelperBuilder {
-	b.packages = append(b.packages, values...)
+// AddPackages adds a map of protobuf packages that will be scanned looking for types and services. The key of the map
+// is the name of the package and the value is the relative order of the package when presented to the user.
+func (b *HelperBuilder) AddPackages(values map[string]int) *HelperBuilder {
+	if b.packages == nil {
+		b.packages = make(map[string]int)
+	}
+	for name, order := range values {
+		b.packages[name] = order
+	}
 	return b
 }
 
@@ -124,9 +134,9 @@ func (b *HelperBuilder) Build() (result *Helper, err error) {
 	pluralizer := pluralize.NewClient()
 
 	// Prepare the set of packages:
-	packages := make(map[protoreflect.FullName]bool, len(b.packages))
-	for _, name := range b.packages {
-		packages[protoreflect.FullName(name)] = true
+	packages := make(map[protoreflect.FullName]int, len(b.packages))
+	for name, order := range b.packages {
+		packages[protoreflect.FullName(name)] = order
 	}
 
 	// Create and populate the object:
@@ -152,15 +162,21 @@ func (h *Helper) scan() {
 	sort.Slice(
 		h.helpers,
 		func(i, j int) bool {
-			nameI := h.helpers[i].descriptor.FullName()
-			nameJ := h.helpers[j].descriptor.FullName()
+			helperI, helperJ := h.helpers[i], h.helpers[j]
+			nameI, nameJ := helperI.descriptor.FullName(), helperJ.descriptor.FullName()
+			pkgI, pkgJ := nameI.Parent(), nameJ.Parent()
+			orderI, orderJ := h.packages[pkgI], h.packages[pkgJ]
+			if orderI != orderJ {
+				return orderI < orderJ
+			}
 			return nameI < nameJ
 		},
 	)
 }
 
 func (h *Helper) scanFile(fileDesc protoreflect.FileDescriptor) bool {
-	if !h.packages[fileDesc.Package()] {
+	_, ok := h.packages[fileDesc.Package()]
+	if !ok {
 		h.logger.Debug(
 			"Ignoring file because it isn't in the list enabled packages",
 			slog.String("file", fileDesc.Path()),
@@ -403,14 +419,14 @@ func (h *Helper) getItemsField(messageDesc protoreflect.MessageDescriptor) proto
 	return fieldDesc
 }
 
-// Names resturns the full names of the object types. The results are sorted alphabetically.
+// Names returns the full names of the object types. The results are sorted by the order of the packages, and
+// alphabetically within each package.
 func (h *Helper) Names() []string {
 	h.scanIfNeeded()
 	results := make([]string, len(h.helpers))
 	for i, objectInfo := range h.helpers {
 		results[i] = string(objectInfo.descriptor.FullName())
 	}
-	sort.Strings(results)
 	return results
 }
 
@@ -426,7 +442,7 @@ func (h *Helper) Singulars() []string {
 	return results
 }
 
-// Plurals the object types in plural. The reusults are in lower case an sorted alphabetically.
+// Plurals the object types in plural. The results are in lower case and sorted alphabetically..
 func (h *Helper) Plurals() []string {
 	h.scanIfNeeded()
 	set := make(map[string]bool, len(h.helpers))
