@@ -15,6 +15,7 @@ package reflection
 
 import (
 	"context"
+	"strings"
 
 	ffv1 "github.com/innabox/fulfillment-common/api/fulfillment/v1"
 	sharedv1 "github.com/innabox/fulfillment-common/api/shared/v1"
@@ -59,7 +60,7 @@ var _ = Describe("Reflection helper", func() {
 			helper, err := NewHelper().
 				SetLogger(logger).
 				SetConnection(connection).
-				AddPackage("fulfillment.v1").
+				AddPackage("fulfillment.v1", 1).
 				Build()
 			Expect(err).ToNot(HaveOccurred())
 			Expect(helper).ToNot(BeNil())
@@ -69,8 +70,8 @@ var _ = Describe("Reflection helper", func() {
 			helper, err := NewHelper().
 				SetLogger(logger).
 				SetConnection(connection).
-				AddPackage("fulfillment.v1").
-				AddPackage("private.v1").
+				AddPackage("fulfillment.v1", 1).
+				AddPackage("private.v1", 0).
 				Build()
 			Expect(err).ToNot(HaveOccurred())
 			Expect(helper).ToNot(BeNil())
@@ -80,7 +81,10 @@ var _ = Describe("Reflection helper", func() {
 			helper, err := NewHelper().
 				SetLogger(logger).
 				SetConnection(connection).
-				AddPackages("fulfillment.v1", "private.v1").
+				AddPackages(map[string]int{
+					"private.v1":     0,
+					"fulfillment.v1": 1,
+				}).
 				Build()
 			Expect(err).ToNot(HaveOccurred())
 			Expect(helper).ToNot(BeNil())
@@ -89,7 +93,7 @@ var _ = Describe("Reflection helper", func() {
 		It("Can't be created without a logger", func() {
 			helper, err := NewHelper().
 				SetConnection(connection).
-				AddPackage("fulfillment.v1").
+				AddPackage("fulfillment.v1", 1).
 				Build()
 			Expect(err).To(MatchError("logger is mandatory"))
 			Expect(helper).To(BeNil())
@@ -98,7 +102,7 @@ var _ = Describe("Reflection helper", func() {
 		It("Can't be created without a connection", func() {
 			helper, err := NewHelper().
 				SetLogger(logger).
-				AddPackage("fulfillment.v1").
+				AddPackage("fulfillment.v1", 1).
 				Build()
 			Expect(err).To(MatchError("gRPC connection is mandatory"))
 			Expect(helper).To(BeNil())
@@ -122,7 +126,7 @@ var _ = Describe("Reflection helper", func() {
 			helper, err = NewHelper().
 				SetLogger(logger).
 				SetConnection(connection).
-				AddPackage("fulfillment.v1").
+				AddPackage("fulfillment.v1", 1).
 				Build()
 			Expect(err).ToNot(HaveOccurred())
 		})
@@ -664,6 +668,117 @@ var _ = Describe("Reflection helper", func() {
 			metadata := objectHelper.GetMetadata(object)
 			Expect(metadata).ToNot(BeNil())
 			Expect(metadata.GetName()).To(Equal("my-cluster"))
+		})
+
+		It("Sorts types according to package order", func() {
+			// Create a helper with multiple packages, where 'private.v1' has a lower order (0) than
+			// 'fulfillment.v1' (1), so 'private.v1' types should appear first:
+			multiPackageHelper, err := NewHelper().
+				SetLogger(logger).
+				SetConnection(connection).
+				AddPackage("private.v1", 0).
+				AddPackage("fulfillment.v1", 1).
+				Build()
+			Expect(err).ToNot(HaveOccurred())
+
+			// Get all the type names:
+			names := multiPackageHelper.Names()
+
+			// Verify that 'private.v1' types come before 'fulfillment.v1' types:
+			var lastPrivateIndex int = -1
+			var firstFulfillmentIndex int = -1
+			for i, name := range names {
+				if strings.HasPrefix(name, "private.v1.") {
+					lastPrivateIndex = i
+				}
+				if strings.HasPrefix(name, "fulfillment.v1.") && firstFulfillmentIndex == -1 {
+					firstFulfillmentIndex = i
+				}
+			}
+
+			// If both package types exist, verify that all 'private.v1' types come before
+			// 'fulfillment.v1' types:
+			if lastPrivateIndex >= 0 && firstFulfillmentIndex >= 0 {
+				Expect(lastPrivateIndex).To(
+					BeNumerically("<", firstFulfillmentIndex),
+					"All 'private.v1' types should come before 'fulfillment.v1' types",
+				)
+			}
+
+			// Verify that within each package, types are sorted alphabetically:
+			privateTypes := []string{}
+			fulfillmentTypes := []string{}
+			for _, name := range names {
+				if strings.HasPrefix(name, "private.v1.") {
+					privateTypes = append(privateTypes, name)
+				}
+				if strings.HasPrefix(name, "fulfillment.v1.") {
+					fulfillmentTypes = append(fulfillmentTypes, name)
+				}
+			}
+
+			// Check that 'private.v1' types are sorted alphabetically:
+			if len(privateTypes) > 1 {
+				for i := 1; i < len(privateTypes); i++ {
+					Expect(privateTypes[i-1] < privateTypes[i]).To(
+						BeTrue(),
+						"Types within 'private.v1' should be sorted alphabetically, '%s' "+
+							"should come before '%s'",
+						privateTypes[i-1], privateTypes[i],
+					)
+				}
+			}
+
+			// Check that 'fulfillment.v1' types are sorted alphabetically:
+			if len(fulfillmentTypes) > 1 {
+				for i := 1; i < len(fulfillmentTypes); i++ {
+					Expect(fulfillmentTypes[i-1] < fulfillmentTypes[i]).To(
+						BeTrue(),
+						"Types within 'fulfillment.v1' should be sorted alphabetically, '%s' "+
+							"should come before '%s'",
+						fulfillmentTypes[i-1], fulfillmentTypes[i],
+					)
+				}
+			}
+		})
+
+		It("Sorts types according to package order when adding packages", func() {
+			// Create a helper using AddPackages method with reversed order:
+			multiPackageHelper, err := NewHelper().
+				SetLogger(logger).
+				SetConnection(connection).
+				AddPackages(map[string]int{
+					"fulfillment.v1": 2,
+					"private.v1":     1,
+				}).
+				Build()
+			Expect(err).ToNot(HaveOccurred())
+
+			// Get all the type names:
+			names := multiPackageHelper.Names()
+
+			// Verify that 'private.v1' types come before 'fulfillment.v1' types, since 'private.v1' has
+			// order 1, 'fulfillment.v1' has order 2:
+			var lastPrivateIndex int = -1
+			var firstFulfillmentIndex int = -1
+			for i, name := range names {
+				if strings.HasPrefix(name, "private.v1.") {
+					lastPrivateIndex = i
+				}
+				if strings.HasPrefix(name, "fulfillment.v1.") && firstFulfillmentIndex == -1 {
+					firstFulfillmentIndex = i
+				}
+			}
+
+			// If both package types exist, verify that all 'private.v1' types come before 'fulfillment.v1'
+			// types:
+			if lastPrivateIndex >= 0 && firstFulfillmentIndex >= 0 {
+				Expect(lastPrivateIndex).To(
+					BeNumerically("<", firstFulfillmentIndex),
+					"All 'private.v1' types should come before 'fulfillment.v1' types when "+
+						"'private.v1' has lower order",
+				)
+			}
 		})
 	})
 })

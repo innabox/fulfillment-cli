@@ -26,5 +26,3 @@ var Public = []string{
 var Private = []string{
 	PrivateV1,
 }
-
-var All = append(Public, Private...)
