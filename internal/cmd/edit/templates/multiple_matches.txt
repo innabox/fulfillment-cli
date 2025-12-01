@@ -1,0 +1,18 @@
+Name or identifier '{{ .Ref }}' is ambiguous.
+
+{{ if lt (len .Ids) .Total }}
+There are {{ .Total }} matching objects, these are the first {{ len .Ids }}:
+{{ else }}
+There are {{ .Total }} matching objects:
+{{ end }}
+
+{{ range .Ids -}}
+{{ . }}
+{{ end }}
+
+Use the identifiers instead of the names to avoid the ambiguity. For example, to edit the object
+with identifier '{{ index .Ids 0 }}' use the following command:
+
+{{ .Binary }} edit {{ .Object }} {{ index .Ids 0 }}
+
+Use the '--help' option to get more details about the command.

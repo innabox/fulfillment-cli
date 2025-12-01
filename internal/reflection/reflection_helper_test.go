@@ -347,17 +347,18 @@ var _ = Describe("Reflection helper", func() {
 			// Use the helper to send the request, and verify the response:
 			objectHelper := helper.Lookup("cluster")
 			Expect(objectHelper).ToNot(BeNil())
-			items, err := objectHelper.List(ctx, ListOptions{})
+			listResult, err := objectHelper.List(ctx, ListOptions{})
 			Expect(err).ToNot(HaveOccurred())
-			Expect(items).To(HaveLen(2))
+			Expect(listResult.Items).To(HaveLen(2))
+			Expect(listResult.Total).To(Equal(int32(2)))
 			Expect(proto.Equal(
-				items[0],
+				listResult.Items[0],
 				ffv1.Cluster_builder{
 					Id: "123",
 				}.Build(),
 			)).To(BeTrue())
 			Expect(proto.Equal(
-				items[1],
+				listResult.Items[1],
 				ffv1.Cluster_builder{
 					Id: "456",
 				}.Build(),

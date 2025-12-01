@@ -23,6 +23,8 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"sort"
+	"strconv"
 
 	"github.com/innabox/fulfillment-common/logging"
 	"github.com/innabox/fulfillment-common/templating"
@@ -53,7 +55,7 @@ func Cmd() *cobra.Command {
 		},
 	}
 	result := &cobra.Command{
-		Use:   "edit OBJECT ID",
+		Use:   "edit OBJECT ID|NAME",
 		Short: "Edit objects",
 		RunE:  runner.run,
 	}
@@ -155,26 +157,22 @@ func (c *runnerContext) run(cmd *cobra.Command, args []string) error {
 		)
 	}
 
-	// Check that the object identifier has been specified:
+	// Check that the object identifier or name has been specified:
 	if len(args) < 2 {
 		c.console.Render(ctx, c.engine, "no_id.txt", map[string]any{
 			"Binary": os.Args[0],
 		})
 		return nil
 	}
-	objectId := args[1]
+	key := args[1]
 
-	// Create the gRPC connection from the configuration:
-	c.conn, err = cfg.Connect(ctx, cmd.Flags())
+	// Find the object by identifier or name:
+	object, err := c.findObject(ctx, key)
 	if err != nil {
-		return fmt.Errorf("failed to create gRPC connection: %w", err)
+		return err
 	}
-	defer c.conn.Close()
-
-	// Get the current representation of the object:
-	object, err := c.get(ctx, objectId)
-	if err != nil {
-		return fmt.Errorf("failed to get object of type '%s' with identifier '%s': %w", c.helper, objectId, err)
+	if object == nil {
+		return nil
 	}
 
 	// Render the object:
@@ -206,6 +204,7 @@ func (c *runnerContext) run(cmd *cobra.Command, args []string) error {
 			)
 		}
 	}()
+	objectId := c.helper.GetId(object)
 	tmpFile := filepath.Join(tmpDir, fmt.Sprintf("%s-%s.%s", c.helper, objectId, c.format))
 	err = os.WriteFile(tmpFile, data, 0600)
 	if err != nil {
@@ -281,9 +280,49 @@ func (c *runnerContext) findEditor(ctx context.Context) string {
 	return defaultEditor
 }
 
-func (c *runnerContext) get(ctx context.Context, id string) (result proto.Message, err error) {
-	result, err = c.helper.Get(ctx, id)
-	return
+// findObject tries to find an object by identifier or name. It uses the list method with a filter that matches
+// either the identifier or the name. Returns an error if no match is found or if multiple matches are found.
+func (c *runnerContext) findObject(ctx context.Context, ref string) (result proto.Message, err error) {
+	// Find the objects matching the reference (identifier or name):
+	filter := fmt.Sprintf(`this.id == %[1]s || this.metadata.name == %[1]s`, strconv.Quote(ref))
+	response, err := c.helper.List(ctx, reflection.ListOptions{
+		Filter: filter,
+		Limit:  10,
+	})
+	if err != nil {
+		err = fmt.Errorf("failed to find object of type '%s' with identifier or name '%s': %w", c.helper, ref, err)
+		return
+	}
+	items := response.Items
+	total := response.Total
+
+	// Prepare the response based on the number of objects found:
+	switch len(items) {
+	case 0:
+		c.console.Render(ctx, c.engine, "no_matches.txt", map[string]any{
+			"Binary": os.Args[0],
+			"Object": c.helper.String(),
+			"Ref":    ref,
+		})
+		return
+	case 1:
+		result = items[0]
+		return
+	default:
+		ids := make([]string, 0, len(items))
+		for _, object := range items {
+			ids = append(ids, c.helper.GetId(object))
+		}
+		sort.Strings(ids)
+		c.console.Render(ctx, c.engine, "multiple_matches.txt", map[string]any{
+			"Binary": os.Args[0],
+			"Ids":    ids,
+			"Object": c.helper.String(),
+			"Ref":    ref,
+			"Total":  total,
+		})
+		return
+	}
 }
 
 func (c *runnerContext) update(ctx context.Context, object proto.Message) (result proto.Message, err error) {
