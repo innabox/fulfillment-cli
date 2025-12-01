@@ -315,7 +315,11 @@ func (c *runnerContext) run(cmd *cobra.Command, args []string) error {
 
 	// Save the authenticatoin configuration. Note that the OAuth settings are only saved when they are actually
 	// used, and they won't be actually used if the user selected to use a static token or a token script.
-	if c.args.token == "" && c.args.tokenScript == "" && tokenIssuer != "" {
+	if c.args.token != "" {
+		cfg.AccessToken = c.args.token
+	} else if c.args.tokenScript != "" {
+		cfg.TokenScript = c.args.tokenScript
+	} else if tokenIssuer != "" {
 		cfg.OauthIssuer = tokenIssuer
 		cfg.OAuthFlow = oauth.Flow(c.args.oauthFlow)
 		cfg.OAuthClientId = c.args.oauthClientId
