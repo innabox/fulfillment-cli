@@ -38,7 +38,7 @@ import (
 
 // Config is the type used to store the configuration of the client.
 type Config struct {
-	TokenScript       string     `json:"token_script"`
+	TokenScript       string     `json:"token_script,omitempty"`
 	Plaintext         bool       `json:"plaintext,omitempty"`
 	Insecure          bool       `json:"insecure,omitempty"`
 	CaFiles           []CaFile   `json:"ca_files,omitempty"`
@@ -46,7 +46,7 @@ type Config struct {
 	Private           bool       `json:"packages,omitempty"`
 	AccessToken       string     `json:"access_token,omitempty"`
 	RefreshToken      string     `json:"refresh_token,omitempty"`
-	TokenExpiry       time.Time  `json:"token_expiry"`
+	TokenExpiry       time.Time  `json:"token_expiry,omitempty"`
 	OAuthFlow         oauth.Flow `json:"oauth_flow,omitempty"`
 	OauthIssuer       string     `json:"oauth_issuer,omitempty"`
 	OAuthClientId     string     `json:"oauth_client_id,omitempty"`
