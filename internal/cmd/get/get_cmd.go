@@ -253,7 +253,11 @@ func (c *runnerContext) list(ctx context.Context, keys []string) (results []prot
 		}
 	}
 
-	results, err = c.objectHelper.List(ctx, options)
+	listResult, err := c.objectHelper.List(ctx, options)
+	if err != nil {
+		return
+	}
+	results = listResult.Items
 	return
 }
 
@@ -526,7 +530,7 @@ func (c *runnerContext) lookupName(ctx context.Context, messageFullName protoref
 		`this.id == %[1]s || this.metadata.name == %[1]s`,
 		strconv.Quote(key),
 	)
-	objects, err := objectHelper.List(ctx, reflection.ListOptions{
+	listResult, err := objectHelper.List(ctx, reflection.ListOptions{
 		Filter: filter,
 	})
 	if err != nil {
@@ -542,13 +546,13 @@ func (c *runnerContext) lookupName(ctx context.Context, messageFullName protoref
 	}
 
 	// If there is no match, or multiple matches, return the original key:
-	if len(objects) == 0 {
+	if len(listResult.Items) == 0 {
 		result = key
 		return
 	}
 
 	// Return the name of the first object:
-	object := objects[0]
+	object := listResult.Items[0]
 	metadata := objectHelper.GetMetadata(object)
 	if metadata == nil {
 		c.logger.ErrorContext(

@@ -48,8 +48,10 @@ const (
 	filterFieldName   = protoreflect.Name("filter")
 	idFieldName       = protoreflect.Name("id")
 	itemsFieldName    = protoreflect.Name("items")
+	limitFieldName    = protoreflect.Name("limit")
 	metadataFieldName = protoreflect.Name("metadata")
 	objectFieldName   = protoreflect.Name("object")
+	totalFieldName    = protoreflect.Name("total")
 )
 
 // HelperBuilder contains the data and logic needed to create a reflection helper.
@@ -239,6 +241,9 @@ func (h *Helper) scanService(serviceDesc protoreflect.ServiceDescriptor) {
 		return
 	}
 
+	// The request of the list method may have a `limit` field:
+	listRequestLimitFieldDesc := h.getLimitField(listDesc.Input())
+
 	// The response of the list method must have an `items` field:
 	listResponseItemsFieldDesc := h.getItemsField(listDesc.Output())
 	if listResponseItemsFieldDesc == nil {
@@ -247,6 +252,9 @@ func (h *Helper) scanService(serviceDesc protoreflect.ServiceDescriptor) {
 	if listResponseItemsFieldDesc.Message() != objectDesc {
 		return
 	}
+
+	// The response of the list method may have a `total` field:
+	listResponseTotalFieldDesc := h.getTotalField(listDesc.Output())
 
 	// The request and response of the `Crate` method must have an `object` message field:
 	createRequestObjectFieldDesc := h.getObjectField(createDesc.Input())
@@ -331,7 +339,9 @@ func (h *Helper) scanService(serviceDesc protoreflect.ServiceDescriptor) {
 				response: listResponseTemplate,
 			},
 			filter: listRequestFilterFieldDesc,
+			limit:  listRequestLimitFieldDesc,
 			items:  listResponseItemsFieldDesc,
+			total:  listResponseTotalFieldDesc,
 		},
 		create: createInfo{
 			methodInfo: methodInfo{
@@ -405,6 +415,20 @@ func (h *Helper) getFilterField(messageDesc protoreflect.MessageDescriptor) prot
 	return fieldDesc
 }
 
+func (h *Helper) getLimitField(messageDesc protoreflect.MessageDescriptor) protoreflect.FieldDescriptor {
+	fieldDesc := messageDesc.Fields().ByName(limitFieldName)
+	if fieldDesc == nil {
+		return nil
+	}
+	if fieldDesc.Cardinality() == protoreflect.Repeated {
+		return nil
+	}
+	if fieldDesc.Kind() != protoreflect.Int32Kind {
+		return nil
+	}
+	return fieldDesc
+}
+
 func (h *Helper) getItemsField(messageDesc protoreflect.MessageDescriptor) protoreflect.FieldDescriptor {
 	fieldDesc := messageDesc.Fields().ByName(itemsFieldName)
 	if fieldDesc == nil {
@@ -414,6 +438,20 @@ func (h *Helper) getItemsField(messageDesc protoreflect.MessageDescriptor) proto
 		return nil
 	}
 	if fieldDesc.Kind() != protoreflect.MessageKind {
+		return nil
+	}
+	return fieldDesc
+}
+
+func (h *Helper) getTotalField(messageDesc protoreflect.MessageDescriptor) protoreflect.FieldDescriptor {
+	fieldDesc := messageDesc.Fields().ByName(totalFieldName)
+	if fieldDesc == nil {
+		return nil
+	}
+	if fieldDesc.Cardinality() == protoreflect.Repeated {
+		return nil
+	}
+	if fieldDesc.Kind() != protoreflect.Int32Kind {
 		return nil
 	}
 	return fieldDesc
@@ -521,7 +559,9 @@ type getInfo struct {
 type listInfo struct {
 	methodInfo
 	filter protoreflect.FieldDescriptor
+	limit  protoreflect.FieldDescriptor
 	items  protoreflect.FieldDescriptor
+	total  protoreflect.FieldDescriptor
 }
 
 type createInfo struct {
@@ -567,12 +607,21 @@ func (h *ObjectHelper) Plural() string {
 
 type ListOptions struct {
 	Filter string
+	Limit  int32
 }
 
-func (h *ObjectHelper) List(ctx context.Context, options ListOptions) (results []proto.Message, err error) {
+type ListResult struct {
+	Items []proto.Message
+	Total int32
+}
+
+func (h *ObjectHelper) List(ctx context.Context, options ListOptions) (result ListResult, err error) {
 	request := proto.Clone(h.list.request)
 	if options.Filter != "" {
 		request.ProtoReflect().Set(h.list.filter, protoreflect.ValueOfString(options.Filter))
+	}
+	if options.Limit > 0 && h.list.limit != nil {
+		request.ProtoReflect().Set(h.list.limit, protoreflect.ValueOfInt32(options.Limit))
 	}
 	response := proto.Clone(h.list.response)
 	err = h.parent.connection.Invoke(ctx, h.list.path, request, response)
@@ -580,9 +629,14 @@ func (h *ObjectHelper) List(ctx context.Context, options ListOptions) (results [
 		return
 	}
 	list := response.ProtoReflect().Get(h.list.items).List()
-	results = make([]proto.Message, list.Len())
+	result.Items = make([]proto.Message, list.Len())
 	for i := range list.Len() {
-		results[i] = list.Get(i).Message().Interface()
+		result.Items[i] = list.Get(i).Message().Interface()
+	}
+	if h.list.total != nil {
+		result.Total = int32(response.ProtoReflect().Get(h.list.total).Int())
+	} else {
+		result.Total = int32(len(result.Items))
 	}
 	return
 }
