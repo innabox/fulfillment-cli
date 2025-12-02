@@ -21,6 +21,3 @@ columns:
 
 - header: TITLE
   value: this.title
-
-- header: DESCRIPTION
-  value: this.description
