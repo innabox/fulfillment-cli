@@ -16,7 +16,9 @@ package testing
 import (
 	"context"
 	"net"
+	"strings"
 
+	eventsv1 "github.com/innabox/fulfillment-common/api/events/v1"
 	ffv1 "github.com/innabox/fulfillment-common/api/fulfillment/v1"
 	. "github.com/onsi/ginkgo/v2/dsl/core"
 	. "github.com/onsi/gomega"
@@ -213,4 +215,99 @@ func (s *HostPoolsServerFuncs) Update(ctx context.Context,
 	request *ffv1.HostPoolsUpdateRequest) (response *ffv1.HostPoolsUpdateResponse, err error) {
 	response, err = s.UpdateFunc(ctx, request)
 	return
+}
+
+// Make sure that we implement the interface.
+var _ eventsv1.EventsServer = (*EventsServerFuncs)(nil)
+
+// EventsServerFuncs is an implementation of the events server that uses configurable functions to implement the
+// methods.
+type EventsServerFuncs struct {
+	eventsv1.UnimplementedEventsServer
+
+	WatchFunc func(*eventsv1.EventsWatchRequest, eventsv1.Events_WatchServer) error
+}
+
+func (s *EventsServerFuncs) Watch(request *eventsv1.EventsWatchRequest, stream eventsv1.Events_WatchServer) error {
+	return s.WatchFunc(request, stream)
+}
+
+// Helper function to extract object ID from event
+func GetEventObjectID(event *eventsv1.Event) string {
+	switch payload := event.Payload.(type) {
+	case *eventsv1.Event_Cluster:
+		if payload.Cluster != nil {
+			return payload.Cluster.Id
+		}
+	case *eventsv1.Event_ClusterTemplate:
+		if payload.ClusterTemplate != nil {
+			return payload.ClusterTemplate.Id
+		}
+	}
+	return ""
+}
+
+// Helper function to check if an event matches the filter
+func MatchesFilter(event *eventsv1.Event, filter string) bool {
+	// Empty filter - send all events
+	if filter == "" {
+		return true
+	}
+
+	// Determine what type the filter is for
+	// Check for cluster_template first (more specific) to avoid substring issues
+	isClusterTemplateFilter := strings.Contains(filter, "event.cluster_template")
+	isClusterFilter := strings.Contains(filter, "event.cluster") && !isClusterTemplateFilter
+
+	// Check if the event type matches the filter type
+	switch event.Payload.(type) {
+	case *eventsv1.Event_Cluster:
+		if !isClusterFilter {
+			return false
+		}
+		// If filter is just a type check, send all cluster events
+		if filter == "has(event.cluster)" {
+			return true
+		}
+	case *eventsv1.Event_ClusterTemplate:
+		if !isClusterTemplateFilter {
+			return false
+		}
+		// If filter is just a type check, send all cluster template events
+		if filter == "has(event.cluster_template)" {
+			return true
+		}
+	default:
+		return false
+	}
+
+	// Extract ID and name from the event
+	var id, name string
+	switch payload := event.Payload.(type) {
+	case *eventsv1.Event_Cluster:
+		if payload.Cluster != nil {
+			id = payload.Cluster.Id
+			if payload.Cluster.Metadata != nil {
+				name = payload.Cluster.Metadata.Name
+			}
+		}
+	case *eventsv1.Event_ClusterTemplate:
+		if payload.ClusterTemplate != nil {
+			id = payload.ClusterTemplate.Id
+			if payload.ClusterTemplate.Metadata != nil {
+				name = payload.ClusterTemplate.Metadata.Name
+			}
+		}
+	}
+
+	// Check if filter contains the specific ID or name
+	return strings.Contains(filter, id) || strings.Contains(filter, name)
+}
+
+// Helper function to send an event if it matches the filter
+func SendEventIfMatches(event *eventsv1.Event, filter string, stream eventsv1.Events_WatchServer) error {
+	if MatchesFilter(event, filter) {
+		return stream.Send(&eventsv1.EventsWatchResponse{Event: event})
+	}
+	return nil
 }
