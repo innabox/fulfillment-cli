@@ -198,8 +198,8 @@ func (c *runnerContext) run(cmd *cobra.Command, args []string) error {
 func (c *runnerContext) findTemplate(ctx context.Context) (result *ffv1.ClusterTemplate, err error) {
 	// Try to find the template by identifier or name using a filter:
 	filter := fmt.Sprintf(
-		"this.id == %[1]s || this.metadata.name == %[1]s",
-		strconv.Quote(c.args.template),
+		"this.id == %[1]q || this.metadata.name == %[1]q",
+		c.args.template,
 	)
 	listResponse, err := c.templatesClient.List(ctx, ffv1.ClusterTemplatesListRequest_builder{
 		Filter: proto.String(filter),
