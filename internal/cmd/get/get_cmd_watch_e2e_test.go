@@ -121,8 +121,18 @@ var _ = Describe("Watch e2e", func() {
 	})
 
 	It("should receive and display events from the stream", func() {
+		// Create global helper for the runner
+		globalHelper, err := reflection.NewHelper().
+			SetLogger(logger).
+			SetConnection(conn).
+			AddPackage("fulfillment.v1", 0).
+			Build()
+		Expect(err).ToNot(HaveOccurred())
+
 		runner := &runnerContext{
+			logger:       logger,
 			conn:         conn,
+			globalHelper: globalHelper,
 			objectHelper: helper,
 			console:      console,
 			args: struct {
@@ -150,7 +160,7 @@ var _ = Describe("Watch e2e", func() {
 		cancel()
 
 		// Wait for watch to finish
-		err := <-done
+		err = <-done
 
 		// Should get context cancelled error (wrapped)
 		Expect(err).To(HaveOccurred())
