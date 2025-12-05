@@ -19,6 +19,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	iofs "io/fs"
 	"log/slog"
 	"os"
 	"strings"
@@ -45,6 +46,7 @@ type ConsoleBuilder struct {
 type Console struct {
 	logger *slog.Logger
 	file   *os.File
+	engine *templating.Engine
 }
 
 // NewConsole creates a builder that can the be used to create a template engine.
@@ -73,6 +75,15 @@ func (b *ConsoleBuilder) Build() (result *Console, err error) {
 		return
 	}
 
+	// Create the template engine:
+	engine, err := templating.NewEngine().
+		SetLogger(b.logger).
+		Build()
+	if err != nil {
+		err = fmt.Errorf("failed to create template engine: %w", err)
+		return
+	}
+
 	// Set the default writer if needed:
 	file := b.file
 	if file == nil {
@@ -83,8 +94,19 @@ func (b *ConsoleBuilder) Build() (result *Console, err error) {
 	result = &Console{
 		logger: b.logger,
 		file:   file,
+		engine: engine,
 	}
 	return
+}
+
+// AddTemplates adds one temlate file system containing templates, including only the templates that are in the given
+// directory.
+func (c *Console) AddTemplates(fs iofs.FS, dir string) error {
+	sub, err := iofs.Sub(fs, dir)
+	if err != nil {
+		return fmt.Errorf("failed to get templates sub directory '%s': %w", dir, err)
+	}
+	return c.engine.AddFS(sub)
 }
 
 func (c *Console) Printf(ctx context.Context, format string, args ...any) {
@@ -107,9 +129,11 @@ func (c *Console) Printf(ctx context.Context, format string, args ...any) {
 	}
 }
 
-func (c *Console) Render(ctx context.Context, engine *templating.Engine, template string, data any) {
+// Render renders the given template with the given data to stdout. The template should be a template file name that
+// was added via AddTemplatesFS. If no template file systems have been added, this method will log an error.
+func (c *Console) Render(ctx context.Context, template string, data any) {
 	buffer := &bytes.Buffer{}
-	err := engine.Execute(buffer, template, data)
+	err := c.engine.Execute(buffer, template, data)
 	if err != nil {
 		c.logger.ErrorContext(
 			ctx,
@@ -117,6 +141,7 @@ func (c *Console) Render(ctx context.Context, engine *templating.Engine, templat
 			slog.String("template", template),
 			slog.Any("error", err),
 		)
+		return
 	}
 	text := buffer.String()
 	lines := strings.Split(text, "\n")

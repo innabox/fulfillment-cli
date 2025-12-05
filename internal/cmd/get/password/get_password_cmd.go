@@ -23,7 +23,6 @@ import (
 
 	ffv1 "github.com/innabox/fulfillment-common/api/fulfillment/v1"
 	"github.com/innabox/fulfillment-common/logging"
-	"github.com/innabox/fulfillment-common/templating"
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
 	"google.golang.org/grpc"
@@ -59,7 +58,6 @@ type runnerContext struct {
 	logger  *slog.Logger
 	flags   *pflag.FlagSet
 	console *terminal.Console
-	engine  *templating.Engine
 	conn    *grpc.ClientConn
 	args    struct {
 		key string
@@ -75,6 +73,12 @@ func (c *runnerContext) run(cmd *cobra.Command, args []string) error {
 	// Get the logger and flags:
 	c.logger = logging.LoggerFromContext(ctx)
 	c.console = terminal.ConsoleFromContext(ctx)
+
+	// Load the templates for the console messages:
+	err = c.console.AddTemplates(templatesFS, "templates")
+	if err != nil {
+		return fmt.Errorf("failed to load templates: %w", err)
+	}
 
 	// Get the flags:
 	c.flags = cmd.Flags()
@@ -95,16 +99,6 @@ func (c *runnerContext) run(cmd *cobra.Command, args []string) error {
 	}
 	defer c.conn.Close()
 
-	// Create the templating engine:
-	c.engine, err = templating.NewEngine().
-		SetLogger(c.logger).
-		SetFS(templatesFS).
-		SetDir("templates").
-		Build()
-	if err != nil {
-		return fmt.Errorf("failed to create templating engine: %w", err)
-	}
-
 	// Get the cluster name or identifier: from the flag if provided, otherwise from the first positional argument.
 	key := c.args.key
 	if key == "" && len(args) > 0 {
@@ -113,7 +107,7 @@ func (c *runnerContext) run(cmd *cobra.Command, args []string) error {
 
 	// Check the flags:
 	if key == "" {
-		c.console.Render(ctx, c.engine, "no_key.txt", map[string]any{
+		c.console.Render(ctx, "no_key.txt", map[string]any{
 			"Binary": os.Args[0],
 		})
 		return exit.Error(1)
@@ -137,7 +131,7 @@ func (c *runnerContext) run(cmd *cobra.Command, args []string) error {
 	var cluster *ffv1.Cluster
 	switch {
 	case total == 0:
-		c.console.Render(ctx, c.engine, "no_match.txt", map[string]any{
+		c.console.Render(ctx, "no_match.txt", map[string]any{
 			"Key": key,
 		})
 		return exit.Error(1)
@@ -150,7 +144,7 @@ func (c *runnerContext) run(cmd *cobra.Command, args []string) error {
 		}
 		sort.Strings(ids)
 		ids = slices.Compact(ids)
-		c.console.Render(ctx, c.engine, "multiple_matches.txt", map[string]any{
+		c.console.Render(ctx, "multiple_matches.txt", map[string]any{
 			"Binary": os.Args[0],
 			"Ids":    ids,
 			"Key":    key,
