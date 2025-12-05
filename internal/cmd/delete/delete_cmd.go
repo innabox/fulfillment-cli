@@ -14,15 +14,19 @@ language governing permissions and limitations under the License.
 package delete
 
 import (
+	"context"
 	"embed"
 	"fmt"
 	"log/slog"
+	"strconv"
+	"strings"
 
 	"github.com/innabox/fulfillment-common/logging"
 	"github.com/spf13/cobra"
 	"google.golang.org/grpc"
 	grpccodes "google.golang.org/grpc/codes"
 	grpcstatus "google.golang.org/grpc/status"
+	"google.golang.org/protobuf/proto"
 
 	"github.com/innabox/fulfillment-cli/internal/config"
 	"github.com/innabox/fulfillment-cli/internal/exit"
@@ -36,7 +40,7 @@ var templatesFS embed.FS
 func Cmd() *cobra.Command {
 	runner := &runnerContext{}
 	result := &cobra.Command{
-		Use:   "delete OBJECT [OPTION]... [ID]...",
+		Use:   "delete OBJECT [OPTION]... [ID|NAME]...",
 		Short: "Delete objects",
 		RunE:  runner.run,
 	}
@@ -91,6 +95,7 @@ func (c *runnerContext) run(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return fmt.Errorf("failed to create reflection tool: %w", err)
 	}
+	c.console.SetHelper(helper)
 
 	// Check that the object type has been specified:
 	if len(args) == 0 {
@@ -100,7 +105,7 @@ func (c *runnerContext) run(cmd *cobra.Command, args []string) error {
 		return nil
 	}
 
-	// Check that at least one object identifier has been specified:
+	// Check that at least one object identifier or name has been specified:
 	if len(args) < 2 {
 		c.console.Render(ctx, "no_id.txt", map[string]any{})
 		return nil
@@ -116,8 +121,41 @@ func (c *runnerContext) run(cmd *cobra.Command, args []string) error {
 		return nil
 	}
 
-	// Delete each object specified in the command line:
-	for _, id := range args[1:] {
+	// Find all objects matching the provided references using a single list operation:
+	refs := args[1:]
+	matches, err := c.findMatches(ctx, refs)
+	if err != nil {
+		return err
+	}
+
+	// Validate that each reference has exactly one match. If any resolution fails or is ambiguous we stop and show
+	// the error without deleting anything.
+	objects := make([]proto.Message, 0, len(refs))
+	for _, ref := range refs {
+		matches := matches[ref]
+		switch len(matches) {
+		case 0:
+			c.console.Render(ctx, "no_matches.txt", map[string]any{
+				"Object": c.helper.Singular(),
+				"Ref":    ref,
+			})
+			return nil
+		case 1:
+			objects = append(objects, matches[0])
+		default:
+			c.console.Render(ctx, "multiple_matches.txt", map[string]any{
+				"Matches": matches,
+				"Object":  c.helper.Singular(),
+				"Ref":     ref,
+				"Total":   len(matches),
+			})
+			return nil
+		}
+	}
+
+	// Delete each resolved object:
+	for _, object := range objects {
+		id := c.helper.GetId(object)
 		err = c.helper.Delete(ctx, id)
 		if err != nil {
 			status, ok := grpcstatus.FromError(err)
@@ -138,4 +176,41 @@ func (c *runnerContext) run(cmd *cobra.Command, args []string) error {
 	}
 
 	return nil
+}
+
+// findMatches finds all objects matching the provided references using a single list operation. It builds a filter that
+// matches all the provided references at once and returns a map where the key is the reference and the value is the
+// list of matching objectx.
+func (c *runnerContext) findMatches(ctx context.Context, refs []string) (result map[string][]proto.Message, err error) {
+	// Build a filter that matches all references:
+	quoted := make([]string, len(refs))
+	for i, ref := range refs {
+		quoted[i] = strconv.Quote(ref)
+	}
+	list := strings.Join(quoted, ", ")
+	filter := fmt.Sprintf(`this.id in [%[1]s] || this.metadata.name in [%[1]s]`, list)
+
+	// Find all objects matching any of the references:
+	response, err := c.helper.List(ctx, reflection.ListOptions{
+		Filter: filter,
+	})
+	if err != nil {
+		err = fmt.Errorf("failed to find objects of type '%s': %w", c.helper, err)
+		return
+	}
+
+	// Build a map where the key is the reference and the value is the list of matching objects:
+	result = map[string][]proto.Message{}
+	for _, object := range response.Items {
+		id := c.helper.GetId(object)
+		name := c.helper.GetName(object)
+		for _, ref := range refs {
+			if id == ref || name == ref {
+				matches := result[ref]
+				result[ref] = append(matches, object)
+			}
+		}
+	}
+
+	return
 }
