@@ -26,7 +26,6 @@ import (
 	"time"
 
 	"github.com/innabox/fulfillment-common/logging"
-	"github.com/innabox/fulfillment-common/templating"
 	"github.com/spf13/cobra"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/anypb"
@@ -93,7 +92,6 @@ type runnerContext struct {
 	}
 	logger          *slog.Logger
 	console         *terminal.Console
-	engine          *templating.Engine
 	templatesClient ffv1.ClusterTemplatesClient
 	clustersClient  ffv1.ClustersClient
 }
@@ -108,14 +106,10 @@ func (c *runnerContext) run(cmd *cobra.Command, args []string) error {
 	c.logger = logging.LoggerFromContext(ctx)
 	c.console = terminal.ConsoleFromContext(ctx)
 
-	// Create the templating engine:
-	c.engine, err = templating.NewEngine().
-		SetLogger(c.logger).
-		SetFS(templatesFS).
-		SetDir("templates").
-		Build()
+	// Load the templates for the console messages:
+	err = c.console.AddTemplates(templatesFS, "templates")
 	if err != nil {
-		return fmt.Errorf("failed to create templating engine: %w", err)
+		return fmt.Errorf("failed to load templates: %w", err)
 	}
 
 	// Get the configuration:
@@ -156,7 +150,7 @@ func (c *runnerContext) run(cmd *cobra.Command, args []string) error {
 	templateParameterValues, templateParameterIssues := c.parseTemplateParameters(ctx, template)
 	if len(templateParameterIssues) > 0 {
 		validTemplateParameters := c.validTemplateParameters(template)
-		c.console.Render(ctx, c.engine, "template_parameter_issues.txt", map[string]any{
+		c.console.Render(ctx, "template_parameter_issues.txt", map[string]any{
 			"Binary":     os.Args[0],
 			"Template":   c.args.template,
 			"Parameters": validTemplateParameters,
@@ -220,7 +214,7 @@ func (c *runnerContext) findTemplate(ctx context.Context) (result *ffv1.ClusterT
 		sort.Slice(templates, func(i, j int) bool {
 			return templates[i].GetId() < templates[j].GetId()
 		})
-		c.console.Render(ctx, c.engine, "template_conflict.txt", map[string]any{
+		c.console.Render(ctx, "template_conflict.txt", map[string]any{
 			"Binary":    os.Args[0],
 			"Template":  c.args.template,
 			"Templates": templates,
@@ -239,7 +233,7 @@ func (c *runnerContext) findTemplate(ctx context.Context) (result *ffv1.ClusterT
 	sort.Slice(templates, func(i, j int) bool {
 		return templates[i].GetId() < templates[j].GetId()
 	})
-	c.console.Render(ctx, c.engine, "template_not_found.txt", map[string]any{
+	c.console.Render(ctx, "template_not_found.txt", map[string]any{
 		"Binary":    os.Args[0],
 		"Template":  c.args.template,
 		"Templates": templates,

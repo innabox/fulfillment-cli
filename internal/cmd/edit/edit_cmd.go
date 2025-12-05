@@ -26,7 +26,6 @@ import (
 	"sort"
 
 	"github.com/innabox/fulfillment-common/logging"
-	"github.com/innabox/fulfillment-common/templating"
 	"github.com/spf13/cobra"
 	"google.golang.org/grpc"
 	"google.golang.org/protobuf/encoding/protojson"
@@ -74,7 +73,6 @@ func Cmd() *cobra.Command {
 
 type runnerContext struct {
 	logger         *slog.Logger
-	engine         *templating.Engine
 	console        *terminal.Console
 	format         string
 	conn           *grpc.ClientConn
@@ -91,6 +89,12 @@ func (c *runnerContext) run(cmd *cobra.Command, args []string) error {
 	// Get the logger and the console:
 	c.logger = logging.LoggerFromContext(ctx)
 	c.console = terminal.ConsoleFromContext(ctx)
+
+	// Load the templates for the console messages:
+	err = c.console.AddTemplates(templatesFS, "templates")
+	if err != nil {
+		return fmt.Errorf("failed to load templates: %w", err)
+	}
 
 	// Get the configuration:
 	cfg, err := config.Load(ctx)
@@ -118,19 +122,9 @@ func (c *runnerContext) run(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("failed to create reflection tool: %w", err)
 	}
 
-	// Create the templating engine:
-	c.engine, err = templating.NewEngine().
-		SetLogger(c.logger).
-		SetFS(templatesFS).
-		SetDir("templates").
-		Build()
-	if err != nil {
-		return fmt.Errorf("failed to create templating engine: %w", err)
-	}
-
 	// Check that the object type has been specified:
 	if len(args) == 0 {
-		c.console.Render(ctx, c.engine, "no_object.txt", map[string]any{
+		c.console.Render(ctx, "no_object.txt", map[string]any{
 			"Helper": helper,
 			"Binary": os.Args[0],
 		})
@@ -140,7 +134,7 @@ func (c *runnerContext) run(cmd *cobra.Command, args []string) error {
 	// Get the information about the object type:
 	c.helper = helper.Lookup(args[0])
 	if c.helper == nil {
-		c.console.Render(ctx, c.engine, "wrong_object.txt", map[string]any{
+		c.console.Render(ctx, "wrong_object.txt", map[string]any{
 			"Helper": helper,
 			"Binary": os.Args[0],
 			"Object": args[0],
@@ -158,7 +152,7 @@ func (c *runnerContext) run(cmd *cobra.Command, args []string) error {
 
 	// Check that the object identifier or name has been specified:
 	if len(args) < 2 {
-		c.console.Render(ctx, c.engine, "no_id.txt", map[string]any{
+		c.console.Render(ctx, "no_id.txt", map[string]any{
 			"Binary": os.Args[0],
 		})
 		return nil
@@ -298,7 +292,7 @@ func (c *runnerContext) findObject(ctx context.Context, ref string) (result prot
 	// Prepare the response based on the number of objects found:
 	switch len(items) {
 	case 0:
-		c.console.Render(ctx, c.engine, "no_matches.txt", map[string]any{
+		c.console.Render(ctx, "no_matches.txt", map[string]any{
 			"Binary": os.Args[0],
 			"Object": c.helper.String(),
 			"Ref":    ref,
@@ -313,7 +307,7 @@ func (c *runnerContext) findObject(ctx context.Context, ref string) (result prot
 			ids = append(ids, c.helper.GetId(object))
 		}
 		sort.Strings(ids)
-		c.console.Render(ctx, c.engine, "multiple_matches.txt", map[string]any{
+		c.console.Render(ctx, "multiple_matches.txt", map[string]any{
 			"Binary": os.Args[0],
 			"Ids":    ids,
 			"Object": c.helper.String(),
