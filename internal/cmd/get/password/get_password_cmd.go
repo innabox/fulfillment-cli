@@ -20,7 +20,6 @@ import (
 	"os"
 	"slices"
 	"sort"
-	"strconv"
 
 	ffv1 "github.com/innabox/fulfillment-common/api/fulfillment/v1"
 	"github.com/innabox/fulfillment-common/logging"
@@ -123,8 +122,8 @@ func (c *runnerContext) run(cmd *cobra.Command, args []string) error {
 	// Try to find a cluster that has an identifier or name matching the given identifier:
 	client := ffv1.NewClustersClient(c.conn)
 	listFilter := fmt.Sprintf(
-		"this.id == %[1]s || this.metadata.name == %[1]s",
-		strconv.Quote(key),
+		"this.id == %[1]q || this.metadata.name == %[1]q",
+		key,
 	)
 	listResponse, err := client.List(ctx, ffv1.ClustersListRequest_builder{
 		Filter: proto.String(listFilter),

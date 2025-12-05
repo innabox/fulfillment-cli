@@ -540,8 +540,8 @@ func (c *runnerContext) lookupName(ctx context.Context, messageFullName protoref
 
 	// Find the objects whose identifier or name matches the key:
 	filter := fmt.Sprintf(
-		`this.id == %[1]s || this.metadata.name == %[1]s`,
-		strconv.Quote(key),
+		`this.id == %[1]q || this.metadata.name == %[1]q`,
+		key,
 	)
 	listResult, err := objectHelper.List(ctx, reflection.ListOptions{
 		Filter: filter,

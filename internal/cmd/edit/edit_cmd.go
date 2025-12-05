@@ -24,7 +24,6 @@ import (
 	"os/exec"
 	"path/filepath"
 	"sort"
-	"strconv"
 
 	"github.com/innabox/fulfillment-common/logging"
 	"github.com/innabox/fulfillment-common/templating"
@@ -284,7 +283,7 @@ func (c *runnerContext) findEditor(ctx context.Context) string {
 // either the identifier or the name. Returns an error if no match is found or if multiple matches are found.
 func (c *runnerContext) findObject(ctx context.Context, ref string) (result proto.Message, err error) {
 	// Find the objects matching the reference (identifier or name):
-	filter := fmt.Sprintf(`this.id == %[1]s || this.metadata.name == %[1]s`, strconv.Quote(ref))
+	filter := fmt.Sprintf(`this.id == %[1]q || this.metadata.name == %[1]q`, ref)
 	response, err := c.helper.List(ctx, reflection.ListOptions{
 		Filter: filter,
 		Limit:  10,
