@@ -35,6 +35,7 @@ import (
 
 	"github.com/innabox/fulfillment-cli/internal/config"
 	"github.com/innabox/fulfillment-cli/internal/exit"
+	"github.com/innabox/fulfillment-cli/internal/reflection"
 	"github.com/innabox/fulfillment-cli/internal/terminal"
 	ffv1 "github.com/innabox/fulfillment-common/api/fulfillment/v1"
 	sharedv1 "github.com/innabox/fulfillment-common/api/shared/v1"
@@ -133,6 +134,17 @@ func (c *runnerContext) run(cmd *cobra.Command, args []string) error {
 	}
 	defer conn.Close()
 
+	// Create the reflection helper:
+	helper, err := reflection.NewHelper().
+		SetLogger(c.logger).
+		SetConnection(conn).
+		AddPackages(cfg.Packages()).
+		Build()
+	if err != nil {
+		return fmt.Errorf("failed to create reflection tool: %w", err)
+	}
+	c.console.SetHelper(helper)
+
 	// Create the gRPC clients:
 	c.templatesClient = ffv1.NewVirtualMachineTemplatesClient(conn)
 	c.virtualMachinesClient = ffv1.NewVirtualMachinesClient(conn)
@@ -194,50 +206,48 @@ func (c *runnerContext) findTemplate(ctx context.Context) (result *ffv1.VirtualM
 		"this.id == %[1]q || this.metadata.name == %[1]q",
 		c.args.template,
 	)
-	listResponse, err := c.templatesClient.List(ctx, ffv1.VirtualMachineTemplatesListRequest_builder{
+	response, err := c.templatesClient.List(ctx, ffv1.VirtualMachineTemplatesListRequest_builder{
 		Filter: proto.String(filter),
+		Limit:  proto.Int32(10),
 	}.Build())
 	if err != nil {
 		return nil, fmt.Errorf("failed to list templates: %w", err)
 	}
-	templates := listResponse.GetItems()
+	total := response.GetTotal()
+	matches := response.GetItems()
 
 	// If there is exactly one match, use it:
-	if len(templates) == 1 {
-		result = templates[0]
+	if len(matches) == 1 {
+		result = matches[0]
 		return
 	}
 
 	// If there are multiple matches, display them and advise to use the identifier:
-	if len(templates) > 1 {
-		sort.Slice(templates, func(i, j int) bool {
-			return templates[i].GetId() < templates[j].GetId()
-		})
+	if len(matches) > 1 {
 		c.console.Render(ctx, "template_conflict.txt", map[string]any{
-			"Binary":    os.Args[0],
-			"Template":  c.args.template,
-			"Templates": templates,
+			"Binary":  os.Args[0],
+			"Matches": matches,
+			"Ref":     c.args.template,
+			"Total":   total,
 		})
-		return nil, exit.Error(1)
+		err = exit.Error(1)
+		return
 	}
 
 	// If we are here then no matches were found, we will show to the user some of the available templates:
-	listResponse, err = c.templatesClient.List(ctx, ffv1.VirtualMachineTemplatesListRequest_builder{
+	response, err = c.templatesClient.List(ctx, ffv1.VirtualMachineTemplatesListRequest_builder{
 		Limit: proto.Int32(10),
 	}.Build())
 	if err != nil {
 		return nil, fmt.Errorf("failed to list templates: %w", err)
 	}
-	templates = listResponse.GetItems()
-	sort.Slice(templates, func(i, j int) bool {
-		return templates[i].GetId() < templates[j].GetId()
-	})
+	examples := response.GetItems()
 	c.console.Render(ctx, "template_not_found.txt", map[string]any{
-		"Binary":    os.Args[0],
-		"Template":  c.args.template,
-		"Templates": templates,
+		"Binary":   os.Args[0],
+		"Examples": examples,
+		"Ref":      c.args.template,
 	})
-	result = nil
+	err = exit.Error(1)
 	return
 }
 

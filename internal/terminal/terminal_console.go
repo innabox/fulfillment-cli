@@ -32,6 +32,8 @@ import (
 	"github.com/mattn/go-isatty"
 	"gopkg.in/yaml.v3"
 
+	"github.com/innabox/fulfillment-cli/internal/reflection"
+	"github.com/innabox/fulfillment-cli/internal/rendering"
 	"github.com/innabox/fulfillment-common/templating"
 )
 
@@ -40,6 +42,7 @@ import (
 type ConsoleBuilder struct {
 	logger *slog.Logger
 	writer io.Writer
+	helper *reflection.Helper
 }
 
 // Console is helps writing messages to the console. Don't create objects of this type directly, use the NewConsole
@@ -48,6 +51,7 @@ type Console struct {
 	logger *slog.Logger
 	writer io.Writer
 	engine *templating.Engine
+	helper *reflection.Helper
 }
 
 // NewConsole creates a builder that can the be used to create a template engine.
@@ -68,20 +72,18 @@ func (b *ConsoleBuilder) SetWriter(value io.Writer) *ConsoleBuilder {
 	return b
 }
 
+// SetHelper sets the reflection helper that will be used to introspect objects. This is optional. If not set then
+// functions like 'table' that need reflection will not be available.
+func (b *ConsoleBuilder) SetHelper(value *reflection.Helper) *ConsoleBuilder {
+	b.helper = value
+	return b
+}
+
 // Build uses the configuration stored in the builder to create a new console.
 func (b *ConsoleBuilder) Build() (result *Console, err error) {
 	// Check parameters:
 	if b.logger == nil {
 		err = errors.New("logger is mandatory")
-		return
-	}
-
-	// Create the template engine:
-	engine, err := templating.NewEngine().
-		SetLogger(b.logger).
-		Build()
-	if err != nil {
-		err = fmt.Errorf("failed to create template engine: %w", err)
 		return
 	}
 
@@ -91,12 +93,25 @@ func (b *ConsoleBuilder) Build() (result *Console, err error) {
 		writer = os.Stdout
 	}
 
-	// Create and populate the object:
-	result = &Console{
+	// Create the console object first so we can reference its methods when building the template engine:
+	console := &Console{
 		logger: b.logger,
 		writer: writer,
-		engine: engine,
+		helper: b.helper,
 	}
+
+	// Create the template engine:
+	console.engine, err = templating.NewEngine().
+		SetLogger(b.logger).
+		AddFunction("table", console.tableFunc).
+		Build()
+	if err != nil {
+		err = fmt.Errorf("failed to create templating engine: %w", err)
+		return
+	}
+
+	// Return the console object:
+	result = console
 	return
 }
 
@@ -108,6 +123,12 @@ func (c *Console) AddTemplates(fs iofs.FS, dir string) error {
 		return fmt.Errorf("failed to get templates sub directory '%s': %w", dir, err)
 	}
 	return c.engine.AddFS(sub)
+}
+
+// SetHelper sets the reflection helper that will be used to introspect objects. This is optional. If not set then
+// functions like 'table' that need reflection will not be available.
+func (c *Console) SetHelper(value *reflection.Helper) {
+	c.helper = value
 }
 
 func (c *Console) Printf(ctx context.Context, format string, args ...any) {
@@ -258,6 +279,33 @@ func (c *Console) renderColored(ctx context.Context, text string, format string)
 // Write is an implementation of the io.Write interface that allows the console to be used as a writer if needed.
 func (c *Console) Write(p []byte) (n int, err error) {
 	n, err = c.writer.Write(p)
+	return
+}
+
+// tableFunc is a template function that renders a list of objects as a table. The objects parameter must be a slice
+// of objects that implement the proto.Message interface. This will not work and return an error if the reflection
+// helper is not set.
+func (c *Console) tableFunc(objects any) (result string, err error) {
+	if c.helper == nil {
+		err = fmt.Errorf("the 'table' function requires the reflection helper, but it isn't set")
+		return
+	}
+	var buffer bytes.Buffer
+	renderer, err := rendering.NewTableRenderer().
+		SetLogger(c.logger).
+		SetHelper(c.helper).
+		SetWriter(&buffer).
+		Build()
+	if err != nil {
+		err = fmt.Errorf("failed to create table renderer: %w", err)
+		return
+	}
+	err = renderer.Render(context.Background(), objects)
+	if err != nil {
+		err = fmt.Errorf("failed to render table: %w", err)
+		return
+	}
+	result = buffer.String()
 	return
 }
 

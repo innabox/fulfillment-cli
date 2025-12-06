@@ -1,17 +1,13 @@
-Template '{{ .Template }}' doesn't exist.
+Template '{{ .Ref }}' doesn't exist.
 
-{{ if .Templates }}
-
+{{ if .Examples }}
 The following are some of the valid templates:
 
-{{ range .Templates }}
-- {{ .GetId }}{{ if .GetTitle }} - {{ .GetTitle }}{{ end -}}
-{{ end }}
+{{ table .Examples }}
 
 To see the complete list of templates use the following command:
 
 {{ .Binary }} get virtualmachinetemplates
+{{ end }}
 
 Use the '--help' option to get more details about the command.
-
-{{ end }}

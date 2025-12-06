@@ -23,7 +23,6 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"sort"
 
 	"github.com/innabox/fulfillment-common/logging"
 	"github.com/spf13/cobra"
@@ -121,6 +120,7 @@ func (c *runnerContext) run(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return fmt.Errorf("failed to create reflection tool: %w", err)
 	}
+	c.console.SetHelper(helper)
 
 	// Check that the object type has been specified:
 	if len(args) == 0 {
@@ -302,17 +302,12 @@ func (c *runnerContext) findObject(ctx context.Context, ref string) (result prot
 		result = items[0]
 		return
 	default:
-		ids := make([]string, 0, len(items))
-		for _, object := range items {
-			ids = append(ids, c.helper.GetId(object))
-		}
-		sort.Strings(ids)
 		c.console.Render(ctx, "multiple_matches.txt", map[string]any{
-			"Binary": os.Args[0],
-			"Ids":    ids,
-			"Object": c.helper.String(),
-			"Ref":    ref,
-			"Total":  total,
+			"Binary":  os.Args[0],
+			"Matches": items,
+			"Object":  c.helper.String(),
+			"Ref":     ref,
+			"Total":   total,
 		})
 		return
 	}

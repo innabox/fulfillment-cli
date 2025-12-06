@@ -1,18 +1,17 @@
 Name or identifier '{{ .Ref }}' is ambiguous.
 
-{{ if lt (len .Ids) .Total }}
-There are {{ .Total }} matching objects, these are the first {{ len .Ids }}:
+{{ if lt (len .Matches) .Total }}
+There are {{ .Total }} matching objects, these are the first {{ len .Matches }}:
 {{ else }}
 There are {{ .Total }} matching objects:
 {{ end }}
 
-{{ range .Ids -}}
-{{ . }}
-{{ end }}
+{{ table .Matches }}
 
+{{ $first := index .Matches 0 }}
 Use the identifiers instead of the names to avoid the ambiguity. For example, to edit the object
-with identifier '{{ index .Ids 0 }}' use the following command:
+with identifier '{{ $first.GetId }}' use the following command:
 
-{{ .Binary }} edit {{ .Object }} {{ index .Ids 0 }}
+{{ .Binary }} edit {{ .Object }} {{ $first.GetId }}
 
 Use the '--help' option to get more details about the command.
