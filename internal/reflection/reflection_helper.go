@@ -641,65 +641,69 @@ func (h *ObjectHelper) List(ctx context.Context, options ListOptions) (result Li
 	return
 }
 
-func (c *ObjectHelper) Get(ctx context.Context, id string) (result proto.Message, err error) {
-	request := proto.Clone(c.get.request)
-	c.setId(request, c.get.id, id)
-	response := proto.Clone(c.get.response)
-	err = c.parent.connection.Invoke(ctx, c.get.path, request, response)
+func (h *ObjectHelper) Get(ctx context.Context, id string) (result proto.Message, err error) {
+	request := proto.Clone(h.get.request)
+	h.setId(request, h.get.id, id)
+	response := proto.Clone(h.get.response)
+	err = h.parent.connection.Invoke(ctx, h.get.path, request, response)
 	if err != nil {
 		return
 	}
-	result = c.getObject(response, c.get.object)
+	result = h.getObject(response, h.get.object)
 	return
 }
 
-func (c *ObjectHelper) GetId(object proto.Message) string {
-	return object.ProtoReflect().Get(c.idField).String()
+func (h *ObjectHelper) GetId(object proto.Message) string {
+	return object.ProtoReflect().Get(h.idField).String()
 }
 
-func (c *ObjectHelper) GetMetadata(object proto.Message) Metadata {
-	return object.ProtoReflect().Get(c.metadataField).Message().Interface().(Metadata)
+func (h *ObjectHelper) GetName(object proto.Message) string {
+	return h.GetMetadata(object).GetName()
 }
 
-func (c *ObjectHelper) Create(ctx context.Context, object proto.Message) (result proto.Message, err error) {
-	request := proto.Clone(c.create.request)
-	c.setObject(request, c.create.in, object)
-	response := proto.Clone(c.create.response)
-	err = c.parent.connection.Invoke(ctx, c.create.path, request, response)
+func (h *ObjectHelper) GetMetadata(object proto.Message) Metadata {
+	return object.ProtoReflect().Get(h.metadataField).Message().Interface().(Metadata)
+}
+
+func (h *ObjectHelper) Create(ctx context.Context, object proto.Message) (result proto.Message, err error) {
+	request := proto.Clone(h.create.request)
+	h.setObject(request, h.create.in, object)
+	response := proto.Clone(h.create.response)
+	err = h.parent.connection.Invoke(ctx, h.create.path, request, response)
 	if err != nil {
 		err = fmt.Errorf("failed to create object: %w", err)
 	}
-	result = c.getObject(response, c.create.out)
+	result = h.getObject(response, h.create.out)
 	return
 }
 
-func (c *ObjectHelper) Update(ctx context.Context, object proto.Message) (result proto.Message, err error) {
-	request := proto.Clone(c.update.request)
-	c.setObject(request, c.update.in, object)
-	response := proto.Clone(c.update.response)
-	err = c.parent.connection.Invoke(ctx, c.update.path, request, response)
+func (h *ObjectHelper) Update(ctx context.Context, object proto.Message) (result proto.Message, err error) {
+	request := proto.Clone(h.update.request)
+	h.setObject(request, h.update.in, object)
+	response := proto.Clone(h.update.response)
+	err = h.parent.connection.Invoke(ctx, h.update.path, request, response)
 	if err != nil {
 		err = fmt.Errorf("failed to update object: %w", err)
 	}
-	result = c.getObject(response, c.update.out)
+	result = h.getObject(response, h.update.out)
 	return
 }
 
-func (c *ObjectHelper) Delete(ctx context.Context, id string) error {
-	request := proto.Clone(c.delete.request)
-	c.setId(request, c.delete.id, id)
-	response := proto.Clone(c.delete.response)
-	return c.parent.connection.Invoke(ctx, c.delete.path, request, response)
+func (h *ObjectHelper) Delete(ctx context.Context, id string) error {
+	request := proto.Clone(h.delete.request)
+	h.setId(request, h.delete.id, id)
+	response := proto.Clone(h.delete.response)
+	return h.parent.connection.Invoke(ctx, h.delete.path, request, response)
 }
 
-func (c *ObjectHelper) setId(message proto.Message, field protoreflect.FieldDescriptor, value string) {
+func (h *ObjectHelper) setId(message proto.Message, field protoreflect.FieldDescriptor, value string) {
 	message.ProtoReflect().Set(field, protoreflect.ValueOfString(value))
 }
 
-func (c *ObjectHelper) setObject(message proto.Message, field protoreflect.FieldDescriptor, value proto.Message) {
+func (h *ObjectHelper) setObject(message proto.Message, field protoreflect.FieldDescriptor, value proto.Message) {
 	message.ProtoReflect().Set(field, protoreflect.ValueOfMessage(value.ProtoReflect()))
 }
 
-func (c *ObjectHelper) getObject(message proto.Message, field protoreflect.FieldDescriptor) proto.Message {
+func (h *ObjectHelper) getObject(message proto.Message, field protoreflect.FieldDescriptor) proto.Message {
 	return message.ProtoReflect().Get(field).Message().Interface()
 }
