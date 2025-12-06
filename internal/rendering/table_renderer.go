@@ -90,6 +90,7 @@ type TableRenderer struct {
 	logger         *slog.Logger
 	helper         *reflection.Helper
 	writer         *tabwriter.Writer
+	cache          map[protoreflect.FullName]map[string]string
 	includeDeleted bool
 }
 
@@ -141,11 +142,15 @@ func (b *TableRendererBuilder) Build() (result *TableRenderer, err error) {
 	// Create a tab writer for proper column alignment of output:
 	writer := tabwriter.NewWriter(b.writer, 0, 0, 2, ' ', 0)
 
+	// Create the cache:
+	cache := map[protoreflect.FullName]map[string]string{}
+
 	// Create and populate the object:
 	result = &TableRenderer{
 		logger:         b.logger,
 		helper:         b.helper,
 		writer:         writer,
+		cache:          cache,
 		includeDeleted: b.includeDeleted,
 	}
 	return
@@ -161,13 +166,13 @@ func (r *TableRenderer) Render(ctx context.Context, objects []proto.Message) err
 	// Get the object helper from the first object:
 	firstObject := objects[0]
 	descriptor := firstObject.ProtoReflect().Descriptor()
-	objectHelper := r.helper.Lookup(string(descriptor.FullName()))
-	if objectHelper == nil {
+	helper := r.helper.Lookup(string(descriptor.FullName()))
+	if helper == nil {
 		return fmt.Errorf("failed to find object helper for type %q", descriptor.FullName())
 	}
 
 	// Try to load the table definition for this object type:
-	table, err := r.loadTable(objectHelper)
+	table, err := r.loadTable(helper)
 	if err != nil {
 		return err
 	}
@@ -184,11 +189,8 @@ func (r *TableRenderer) Render(ctx context.Context, objects []proto.Message) err
 		table.Columns = slices.Insert(table.Columns, 1, deletedCol)
 	}
 
-	// Initialize the lookup cache:
-	lookupCache := map[protoreflect.FullName]map[string]string{}
-
 	// Get the descriptor for the object type:
-	thisDesc := objectHelper.Descriptor()
+	thisDesc := helper.Descriptor()
 
 	// Build CEL environment:
 	celEnv, err := cel.NewEnv(
@@ -208,14 +210,14 @@ func (r *TableRenderer) Render(ctx context.Context, objects []proto.Message) err
 		if err != nil {
 			return fmt.Errorf(
 				"failed to compile CEL expression %q for column %q of type %q: %w",
-				col.Value, col.Header, objectHelper, err,
+				col.Value, col.Header, helper, err,
 			)
 		}
 		prg, err := celEnv.Program(ast)
 		if err != nil {
 			return fmt.Errorf(
 				"failed to create CEL program from expression %q for column %q of type %q: %w",
-				col.Value, col.Header, objectHelper, err,
+				col.Value, col.Header, helper, err,
 			)
 		}
 		prgs[i] = prg
@@ -228,7 +230,7 @@ func (r *TableRenderer) Render(ctx context.Context, objects []proto.Message) err
 		return err
 	}
 	for _, message := range objects {
-		err := r.renderRow(ctx, table.Columns, prgs, message, objectHelper, lookupCache)
+		err := r.renderRow(ctx, table.Columns, prgs, message, helper)
 		if err != nil {
 			return err
 		}
@@ -238,9 +240,9 @@ func (r *TableRenderer) Render(ctx context.Context, objects []proto.Message) err
 }
 
 // loadTable loads the table definition for the given object type from the embedded filesystem.
-func (r *TableRenderer) loadTable(objectHelper *reflection.ObjectHelper) (result *tableLayout, err error) {
+func (r *TableRenderer) loadTable(helper *reflection.ObjectHelper) (result *tableLayout, err error) {
 	// Try to read the table definition file:
-	file := fmt.Sprintf("%s.yaml", objectHelper.FullName())
+	file := fmt.Sprintf("%s.yaml", helper.FullName())
 	data, err := fs.ReadFile(tablesFS, path.Join("tables", file))
 	if err != nil {
 		// If the file doesn't exist, that's okay - we'll use the default table.
@@ -290,8 +292,8 @@ func (r *TableRenderer) renderHeader(cols []*columnLayout) error {
 }
 
 // renderRow renders a single row of the table.
-func (r *TableRenderer) renderRow(ctx context.Context, cols []*columnLayout, prgs []cel.Program,
-	object proto.Message, objectHelper *reflection.ObjectHelper, lookupCache map[protoreflect.FullName]map[string]string) error {
+func (r *TableRenderer) renderRow(ctx context.Context, cols []*columnLayout, prgs []cel.Program, object proto.Message,
+	helper *reflection.ObjectHelper) error {
 	// Wrap the object in a top-level "this" field to avoid conflicts with reserved words:
 	in := map[string]any{
 		"this": object,
@@ -300,7 +302,7 @@ func (r *TableRenderer) renderRow(ctx context.Context, cols []*columnLayout, prg
 	if err != nil {
 		return fmt.Errorf(
 			"failed to set variables for CEL expression for type %q: %w",
-			objectHelper, err,
+			helper, err,
 		)
 	}
 
@@ -318,16 +320,16 @@ func (r *TableRenderer) renderRow(ctx context.Context, cols []*columnLayout, prg
 		if err != nil {
 			return fmt.Errorf(
 				"failed to evaluate CEL expression %q for column %q of type %q: %w",
-				col.Value, col.Header, objectHelper, err,
+				col.Value, col.Header, helper, err,
 			)
 		}
 
 		// Render the cell value:
-		err = r.renderCell(ctx, col, out, lookupCache)
+		err = r.renderCell(ctx, col, out)
 		if err != nil {
 			return fmt.Errorf(
 				"failed to render value %q for column %q of type %q: %w",
-				out, col.Header, objectHelper, err,
+				out, col.Header, helper, err,
 			)
 		}
 	}
@@ -336,8 +338,7 @@ func (r *TableRenderer) renderRow(ctx context.Context, cols []*columnLayout, prg
 }
 
 // renderCell renders a single cell in the table.
-func (r *TableRenderer) renderCell(ctx context.Context, col *columnLayout, val ref.Val,
-	lookupCache map[protoreflect.FullName]map[string]string) error {
+func (r *TableRenderer) renderCell(ctx context.Context, col *columnLayout, val ref.Val) error {
 	switch val := val.(type) {
 	case types.Int:
 		if col.Type != "" {
@@ -354,7 +355,7 @@ func (r *TableRenderer) renderCell(ctx context.Context, col *columnLayout, val r
 		if col.Lookup && col.Type != "" {
 			messageType, _ := protoregistry.GlobalTypes.FindMessageByName(col.Type)
 			if messageType != nil {
-				return r.renderCellLookup(ctx, val, messageType.Descriptor(), lookupCache)
+				return r.renderCellLookup(ctx, val, messageType.Descriptor())
 			}
 		}
 	}
@@ -362,8 +363,7 @@ func (r *TableRenderer) renderCell(ctx context.Context, col *columnLayout, val r
 }
 
 // renderCellEnum renders an enum value as a string.
-func (r *TableRenderer) renderCellEnum(val types.Int,
-	enumDesc protoreflect.EnumDescriptor) error {
+func (r *TableRenderer) renderCellEnum(val types.Int, enumDesc protoreflect.EnumDescriptor) error {
 	// Get the text of the name of the enum value:
 	valueDescs := enumDesc.Values()
 	valueDesc := valueDescs.ByNumber(protoreflect.EnumNumber(val))
@@ -395,11 +395,11 @@ func (r *TableRenderer) renderCellEnum(val types.Int,
 
 // renderCellLookup renders a lookup value (identifier to name translation).
 func (r *TableRenderer) renderCellLookup(ctx context.Context, val types.String,
-	messageDesc protoreflect.MessageDescriptor, lookupCache map[protoreflect.FullName]map[string]string) error {
+	messageDesc protoreflect.MessageDescriptor) error {
 	key := string(val)
 	var text string
 	if key != "" {
-		text = r.lookupName(ctx, messageDesc.FullName(), key, lookupCache)
+		text = r.lookupName(ctx, messageDesc.FullName(), key)
 	} else {
 		text = "-"
 	}
@@ -409,13 +409,13 @@ func (r *TableRenderer) renderCellLookup(ctx context.Context, val types.String,
 
 // lookupName looks up a name from an identifier.
 func (r *TableRenderer) lookupName(ctx context.Context, messageFullName protoreflect.FullName,
-	key string, lookupCache map[protoreflect.FullName]map[string]string) (result string) {
+	key string) (result string) {
 	// Check if the result is already in the cache and return it immediately if so, otherwise
 	// remember to update the cache when done:
-	cache, ok := lookupCache[messageFullName]
+	cache, ok := r.cache[messageFullName]
 	if !ok {
 		cache = map[string]string{}
-		lookupCache[messageFullName] = cache
+		r.cache[messageFullName] = cache
 	}
 	result, ok = cache[key]
 	if ok {
@@ -426,8 +426,8 @@ func (r *TableRenderer) lookupName(ctx context.Context, messageFullName protoref
 	}()
 
 	// Find the object helper:
-	objectHelper := r.helper.Lookup(string(messageFullName))
-	if objectHelper == nil {
+	helper := r.helper.Lookup(string(messageFullName))
+	if helper == nil {
 		r.logger.ErrorContext(
 			ctx,
 			"Failed to find object helper for type",
@@ -439,10 +439,10 @@ func (r *TableRenderer) lookupName(ctx context.Context, messageFullName protoref
 
 	// Find the objects whose identifier or name matches the key:
 	filter := fmt.Sprintf(
-		"this.id == %q || this.metadata.name == %q",
-		key, key,
+		"this.id == %[1]q || this.metadata.name == %[1]q",
+		key,
 	)
-	listResult, err := objectHelper.List(ctx, reflection.ListOptions{
+	listResult, err := helper.List(ctx, reflection.ListOptions{
 		Filter: filter,
 	})
 	if err != nil {
@@ -465,7 +465,7 @@ func (r *TableRenderer) lookupName(ctx context.Context, messageFullName protoref
 
 	// Return the name of the first object:
 	object := listResult.Items[0]
-	metadata := objectHelper.GetMetadata(object)
+	metadata := helper.GetMetadata(object)
 	result = metadata.GetName()
 	return
 }
