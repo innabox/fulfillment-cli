@@ -19,7 +19,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
-	"os"
 	"strconv"
 	"strings"
 
@@ -162,7 +161,6 @@ func (c *runnerContext) run(cmd *cobra.Command, args []string) error {
 	if len(args) == 0 {
 		c.console.Render(ctx, "no_object.txt", map[string]any{
 			"Helper": c.globalHelper,
-			"Binary": os.Args[0],
 		})
 		return nil
 	}
@@ -172,7 +170,6 @@ func (c *runnerContext) run(cmd *cobra.Command, args []string) error {
 	if c.objectHelper == nil {
 		c.console.Render(ctx, "wrong_object.txt", map[string]any{
 			"Helper": c.globalHelper,
-			"Binary": os.Args[0],
 			"Object": args[0],
 		})
 		return nil

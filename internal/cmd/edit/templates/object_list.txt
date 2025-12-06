@@ -13,11 +13,11 @@ You can use the above fully qualified names, or the short names:
 
 For example, to edit the cluster with identifier '123':
 
-  {{ .Binary }} edit fulfillment.v1.Cluster 123
+  {{ binary }} edit fulfillment.v1.Cluster 123
 
 Or:
 
-  {{ .Binary }} edit cluster 123
+  {{ binary }} edit cluster 123
 
 Note that the short names may be ambiguous if the same object type exists in different packages. In
 that case the one whose fully qualified name appears first in the list will be used.

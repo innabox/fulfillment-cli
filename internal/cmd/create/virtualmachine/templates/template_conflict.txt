@@ -12,6 +12,6 @@ There are {{ .Total }} matching templates:
 Use the identifier instead of the name to avoid the ambiguity. For example, to create the virtual
 machine with template '{{ $first.GetId }}' use a command like this:
 
-{{ .Binary }} create virtualmachine --template {{ $first.GetId }} ...
+{{ binary }} create virtualmachine --template {{ $first.GetId }} ...
 
 Use the '--help' option to get more details about the command.

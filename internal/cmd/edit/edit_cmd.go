@@ -126,7 +126,6 @@ func (c *runnerContext) run(cmd *cobra.Command, args []string) error {
 	if len(args) == 0 {
 		c.console.Render(ctx, "no_object.txt", map[string]any{
 			"Helper": helper,
-			"Binary": os.Args[0],
 		})
 		return nil
 	}
@@ -136,7 +135,6 @@ func (c *runnerContext) run(cmd *cobra.Command, args []string) error {
 	if c.helper == nil {
 		c.console.Render(ctx, "wrong_object.txt", map[string]any{
 			"Helper": helper,
-			"Binary": os.Args[0],
 			"Object": args[0],
 		})
 		return nil
@@ -152,9 +150,7 @@ func (c *runnerContext) run(cmd *cobra.Command, args []string) error {
 
 	// Check that the object identifier or name has been specified:
 	if len(args) < 2 {
-		c.console.Render(ctx, "no_id.txt", map[string]any{
-			"Binary": os.Args[0],
-		})
+		c.console.Render(ctx, "no_id.txt", map[string]any{})
 		return nil
 	}
 	key := args[1]
@@ -293,7 +289,6 @@ func (c *runnerContext) findObject(ctx context.Context, ref string) (result prot
 	switch len(items) {
 	case 0:
 		c.console.Render(ctx, "no_matches.txt", map[string]any{
-			"Binary": os.Args[0],
 			"Object": c.helper.String(),
 			"Ref":    ref,
 		})
@@ -303,7 +298,6 @@ func (c *runnerContext) findObject(ctx context.Context, ref string) (result prot
 		return
 	default:
 		c.console.Render(ctx, "multiple_matches.txt", map[string]any{
-			"Binary":  os.Args[0],
 			"Matches": items,
 			"Object":  c.helper.String(),
 			"Ref":     ref,

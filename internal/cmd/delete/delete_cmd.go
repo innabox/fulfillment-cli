@@ -17,7 +17,6 @@ import (
 	"embed"
 	"fmt"
 	"log/slog"
-	"os"
 
 	"github.com/innabox/fulfillment-common/logging"
 	"github.com/spf13/cobra"
@@ -97,16 +96,13 @@ func (c *runnerContext) run(cmd *cobra.Command, args []string) error {
 	if len(args) == 0 {
 		c.console.Render(ctx, "no_object.txt", map[string]any{
 			"Helper": helper,
-			"Binary": os.Args[0],
 		})
 		return nil
 	}
 
 	// Check that at least one object identifier has been specified:
 	if len(args) < 2 {
-		c.console.Render(ctx, "no_id.txt", map[string]any{
-			"Binary": os.Args[0],
-		})
+		c.console.Render(ctx, "no_id.txt", map[string]any{})
 		return nil
 	}
 
@@ -115,7 +111,6 @@ func (c *runnerContext) run(cmd *cobra.Command, args []string) error {
 	if c.helper == nil {
 		c.console.Render(ctx, "wrong_object.txt", map[string]any{
 			"Helper": helper,
-			"Binary": os.Args[0],
 			"Object": args[0],
 		})
 		return nil

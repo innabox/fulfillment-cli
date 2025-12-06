@@ -103,6 +103,7 @@ func (b *ConsoleBuilder) Build() (result *Console, err error) {
 	// Create the template engine:
 	console.engine, err = templating.NewEngine().
 		SetLogger(b.logger).
+		AddFunction("binary", console.binaryFunc).
 		AddFunction("table", console.tableFunc).
 		Build()
 	if err != nil {
@@ -307,6 +308,11 @@ func (c *Console) tableFunc(objects any) (result string, err error) {
 	}
 	result = buffer.String()
 	return
+}
+
+// binaryFunc is a template function that returns the name of the binary.
+func (c *Console) binaryFunc() string {
+	return os.Args[0]
 }
 
 // Details of the color style and formatter used by the console.

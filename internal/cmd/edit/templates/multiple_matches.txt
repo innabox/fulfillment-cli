@@ -12,6 +12,6 @@ There are {{ .Total }} matching objects:
 Use the identifiers instead of the names to avoid the ambiguity. For example, to edit the object
 with identifier '{{ $first.GetId }}' use the following command:
 
-{{ .Binary }} edit {{ .Object }} {{ $first.GetId }}
+{{ binary }} edit {{ .Object }} {{ $first.GetId }}
 
 Use the '--help' option to get more details about the command.
