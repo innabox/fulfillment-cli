@@ -151,7 +151,7 @@ func (c *Console) Render(ctx context.Context, template string, data any) {
 		currentEmpty := len(line) == 0
 		if currentEmpty {
 			if !previousEmpty {
-				_, err := c.writer.Write([]byte("\n"))
+				_, err := fmt.Fprintf(c.writer, "\n")
 				if err != nil {
 					c.logger.ErrorContext(
 						ctx,
@@ -162,7 +162,7 @@ func (c *Console) Render(ctx context.Context, template string, data any) {
 				previousEmpty = true
 			}
 		} else {
-			_, err := c.writer.Write([]byte(line))
+			_, err := fmt.Fprintf(c.writer, "%s\n", line)
 			if err != nil {
 				c.logger.ErrorContext(
 					ctx,
