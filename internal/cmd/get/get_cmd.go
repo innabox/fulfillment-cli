@@ -264,6 +264,7 @@ func (c *runnerContext) renderTable(ctx context.Context, objects []proto.Message
 	renderer, err := rendering.NewTableRenderer().
 		SetLogger(c.logger).
 		SetHelper(c.globalHelper).
+		SetWriter(c.console).
 		SetIncludeDeleted(c.args.includeDeleted).
 		Build()
 	if err != nil {

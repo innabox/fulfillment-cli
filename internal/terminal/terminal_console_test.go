@@ -52,7 +52,7 @@ var _ = Describe("Console", func() {
 			// Create the console:
 			console, err := NewConsole().
 				SetLogger(logger).
-				SetFile(file).
+				SetWriter(file).
 				Build()
 			Expect(err).ToNot(HaveOccurred())
 
@@ -84,7 +84,7 @@ var _ = Describe("Console", func() {
 			// Create the console:
 			console, err := NewConsole().
 				SetLogger(logger).
-				SetFile(file).
+				SetWriter(file).
 				Build()
 			Expect(err).ToNot(HaveOccurred())
 
@@ -126,7 +126,7 @@ var _ = Describe("Console", func() {
 			// Create the console:
 			console, err := NewConsole().
 				SetLogger(logger).
-				SetFile(file).
+				SetWriter(file).
 				Build()
 			Expect(err).ToNot(HaveOccurred())
 
@@ -158,7 +158,7 @@ var _ = Describe("Console", func() {
 			// Create the console:
 			console, err := NewConsole().
 				SetLogger(logger).
-				SetFile(file).
+				SetWriter(file).
 				Build()
 			Expect(err).ToNot(HaveOccurred())
 

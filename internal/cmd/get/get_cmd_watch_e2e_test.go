@@ -46,10 +46,12 @@ var _ = Describe("Watch e2e", func() {
 
 		// Create cancellable context
 		ctx, cancel = context.WithCancel(context.Background())
+		DeferCleanup(cancel)
 
 		// Create console
 		console, err = terminal.NewConsole().
 			SetLogger(logger).
+			SetWriter(GinkgoWriter).
 			Build()
 		Expect(err).ToNot(HaveOccurred())
 
@@ -112,12 +114,6 @@ var _ = Describe("Watch e2e", func() {
 		// Get cluster helper
 		helper = reflectionHelper.Lookup("cluster")
 		Expect(helper).ToNot(BeNil())
-	})
-
-	AfterEach(func() {
-		if cancel != nil {
-			cancel()
-		}
 	})
 
 	It("should receive and display events from the stream", func() {

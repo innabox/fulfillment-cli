@@ -15,6 +15,7 @@ package virtualmachine
 
 import (
 	"fmt"
+	"log/slog"
 	"os"
 	"strings"
 	"text/tabwriter"
@@ -23,6 +24,8 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/innabox/fulfillment-cli/internal/config"
+	"github.com/innabox/fulfillment-cli/internal/terminal"
+	"github.com/innabox/fulfillment-common/logging"
 )
 
 // Cmd creates the command to describe a virtual machine.
@@ -37,6 +40,8 @@ func Cmd() *cobra.Command {
 }
 
 type runnerContext struct {
+	logger  *slog.Logger
+	console *terminal.Console
 }
 
 func (c *runnerContext) run(cmd *cobra.Command, args []string) error {
@@ -52,6 +57,10 @@ func (c *runnerContext) run(cmd *cobra.Command, args []string) error {
 
 	// Get the context:
 	ctx := cmd.Context()
+
+	// Get the logger and console:
+	c.logger = logging.LoggerFromContext(ctx)
+	c.console = terminal.ConsoleFromContext(ctx)
 
 	// Get the configuration:
 	cfg, err := config.Load(ctx)
@@ -81,7 +90,7 @@ func (c *runnerContext) run(cmd *cobra.Command, args []string) error {
 	}
 
 	// Display the virtual machine:
-	writer := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
+	writer := tabwriter.NewWriter(c.console, 0, 0, 2, ' ', 0)
 	vm := response.Object
 	template := "-"
 	if vm.Spec != nil {

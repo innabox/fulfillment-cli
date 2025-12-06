@@ -20,7 +20,6 @@ import (
 	"io"
 	"io/fs"
 	"log/slog"
-	"os"
 	"path"
 	"slices"
 	"strings"
@@ -81,6 +80,7 @@ type columnLayout struct {
 type TableRendererBuilder struct {
 	logger         *slog.Logger
 	helper         *reflection.Helper
+	writer         io.Writer
 	includeDeleted bool
 }
 
@@ -89,6 +89,7 @@ type TableRendererBuilder struct {
 type TableRenderer struct {
 	logger         *slog.Logger
 	helper         *reflection.Helper
+	writer         *tabwriter.Writer
 	includeDeleted bool
 }
 
@@ -109,6 +110,12 @@ func (b *TableRendererBuilder) SetHelper(value *reflection.Helper) *TableRendere
 	return b
 }
 
+// SetWriter sets the writer that the renderer will use to write messages to the console. This is mandatory.
+func (b *TableRendererBuilder) SetWriter(value io.Writer) *TableRendererBuilder {
+	b.writer = value
+	return b
+}
+
 // SetIncludeDeleted sets whether to include the DELETED column in the output.
 func (b *TableRendererBuilder) SetIncludeDeleted(value bool) *TableRendererBuilder {
 	b.includeDeleted = value
@@ -126,11 +133,19 @@ func (b *TableRendererBuilder) Build() (result *TableRenderer, err error) {
 		err = fmt.Errorf("helper is mandatory")
 		return
 	}
+	if b.writer == nil {
+		err = fmt.Errorf("writer is mandatory")
+		return
+	}
+
+	// Create a tab writer for proper column alignment of output:
+	writer := tabwriter.NewWriter(b.writer, 0, 0, 2, ' ', 0)
 
 	// Create and populate the object:
 	result = &TableRenderer{
 		logger:         b.logger,
 		helper:         b.helper,
+		writer:         writer,
 		includeDeleted: b.includeDeleted,
 	}
 	return
@@ -206,19 +221,14 @@ func (r *TableRenderer) Render(ctx context.Context, objects []proto.Message) err
 		prgs[i] = prg
 	}
 
-	// Create a tab writer for proper column alignment to stdout:
-	writer := tabwriter.NewWriter(io.Writer(os.Stdout), 0, 0, 2, ' ', 0)
-	defer writer.Flush()
-
-	// Render the header:
-	err = r.renderTableHeader(writer, table.Columns)
+	// Render the table and remember to flush the writer when done:
+	defer r.writer.Flush()
+	err = r.renderHeader(table.Columns)
 	if err != nil {
 		return err
 	}
-
-	// Render each row:
 	for _, message := range objects {
-		err := r.renderTableRow(ctx, writer, table.Columns, prgs, message, objectHelper, lookupCache)
+		err := r.renderRow(ctx, table.Columns, prgs, message, objectHelper, lookupCache)
 		if err != nil {
 			return err
 		}
@@ -267,20 +277,20 @@ func (r *TableRenderer) defaultTable() *tableLayout {
 	}
 }
 
-// renderTableHeader renders the table header with column names.
-func (r *TableRenderer) renderTableHeader(writer io.Writer, cols []*columnLayout) error {
+// renderHeader renders the table header with column names.
+func (r *TableRenderer) renderHeader(cols []*columnLayout) error {
 	for i, col := range cols {
 		if i > 0 {
-			fmt.Fprint(writer, "\t")
+			fmt.Fprint(r.writer, "\t")
 		}
-		fmt.Fprintf(writer, "%s", col.Header)
+		fmt.Fprintf(r.writer, "%s", col.Header)
 	}
-	fmt.Fprintf(writer, "\n")
+	fmt.Fprintf(r.writer, "\n")
 	return nil
 }
 
-// renderTableRow renders a single row of the table.
-func (r *TableRenderer) renderTableRow(ctx context.Context, writer io.Writer, cols []*columnLayout, prgs []cel.Program,
+// renderRow renders a single row of the table.
+func (r *TableRenderer) renderRow(ctx context.Context, cols []*columnLayout, prgs []cel.Program,
 	object proto.Message, objectHelper *reflection.ObjectHelper, lookupCache map[protoreflect.FullName]map[string]string) error {
 	// Wrap the object in a top-level "this" field to avoid conflicts with reserved words:
 	in := map[string]any{
@@ -297,7 +307,7 @@ func (r *TableRenderer) renderTableRow(ctx context.Context, writer io.Writer, co
 	// Render each column:
 	for i := range len(cols) {
 		if i > 0 {
-			fmt.Fprintf(writer, "\t")
+			fmt.Fprintf(r.writer, "\t")
 		}
 		col := cols[i]
 		prg := prgs[i]
@@ -313,7 +323,7 @@ func (r *TableRenderer) renderTableRow(ctx context.Context, writer io.Writer, co
 		}
 
 		// Render the cell value:
-		err = r.renderTableCell(ctx, writer, col, out, lookupCache)
+		err = r.renderCell(ctx, col, out, lookupCache)
 		if err != nil {
 			return fmt.Errorf(
 				"failed to render value %q for column %q of type %q: %w",
@@ -321,19 +331,19 @@ func (r *TableRenderer) renderTableRow(ctx context.Context, writer io.Writer, co
 			)
 		}
 	}
-	fmt.Fprintf(writer, "\n")
+	fmt.Fprintf(r.writer, "\n")
 	return nil
 }
 
-// renderTableCell renders a single cell in the table.
-func (r *TableRenderer) renderTableCell(ctx context.Context, writer io.Writer, col *columnLayout, val ref.Val,
+// renderCell renders a single cell in the table.
+func (r *TableRenderer) renderCell(ctx context.Context, col *columnLayout, val ref.Val,
 	lookupCache map[protoreflect.FullName]map[string]string) error {
 	switch val := val.(type) {
 	case types.Int:
 		if col.Type != "" {
 			enumType, _ := protoregistry.GlobalTypes.FindEnumByName(col.Type)
 			if enumType != nil {
-				return r.renderTableCellEnumType(writer, val, enumType.Descriptor())
+				return r.renderCellEnum(val, enumType.Descriptor())
 			}
 			r.logger.Error(
 				"Failed to find enum type",
@@ -344,21 +354,21 @@ func (r *TableRenderer) renderTableCell(ctx context.Context, writer io.Writer, c
 		if col.Lookup && col.Type != "" {
 			messageType, _ := protoregistry.GlobalTypes.FindMessageByName(col.Type)
 			if messageType != nil {
-				return r.renderTableCellLookup(ctx, writer, val, messageType.Descriptor(), lookupCache)
+				return r.renderCellLookup(ctx, val, messageType.Descriptor(), lookupCache)
 			}
 		}
 	}
-	return r.renderTableCellAnyType(writer, val)
+	return r.renderCellAny(val)
 }
 
-// renderTableCellEnumType renders an enum value as a string.
-func (r *TableRenderer) renderTableCellEnumType(writer io.Writer, val types.Int,
+// renderCellEnum renders an enum value as a string.
+func (r *TableRenderer) renderCellEnum(val types.Int,
 	enumDesc protoreflect.EnumDescriptor) error {
 	// Get the text of the name of the enum value:
 	valueDescs := enumDesc.Values()
 	valueDesc := valueDescs.ByNumber(protoreflect.EnumNumber(val))
 	if valueDesc == nil {
-		_, err := fmt.Fprintf(writer, "UNKNOWN:%d", val)
+		_, err := fmt.Fprintf(r.writer, "UNKNOWN:%d", val)
 		if err != nil {
 			return err
 		}
@@ -379,12 +389,12 @@ func (r *TableRenderer) renderTableCellEnumType(writer io.Writer, val types.Int,
 		}
 	}
 
-	_, err := fmt.Fprintf(writer, "%s", valueTxt)
+	_, err := fmt.Fprintf(r.writer, "%s", valueTxt)
 	return err
 }
 
-// renderTableCellLookup renders a lookup value (identifier to name translation).
-func (r *TableRenderer) renderTableCellLookup(ctx context.Context, writer io.Writer, val types.String,
+// renderCellLookup renders a lookup value (identifier to name translation).
+func (r *TableRenderer) renderCellLookup(ctx context.Context, val types.String,
 	messageDesc protoreflect.MessageDescriptor, lookupCache map[protoreflect.FullName]map[string]string) error {
 	key := string(val)
 	var text string
@@ -393,7 +403,7 @@ func (r *TableRenderer) renderTableCellLookup(ctx context.Context, writer io.Wri
 	} else {
 		text = "-"
 	}
-	_, err := fmt.Fprintf(writer, "%s", text)
+	_, err := fmt.Fprintf(r.writer, "%s", text)
 	return err
 }
 
@@ -460,8 +470,8 @@ func (r *TableRenderer) lookupName(ctx context.Context, messageFullName protoref
 	return
 }
 
-// renderTableCellAnyType renders any value type as a string.
-func (r *TableRenderer) renderTableCellAnyType(writer io.Writer, val ref.Val) error {
-	_, err := fmt.Fprintf(writer, "%s", val)
+// renderCellAny renders any value type as a string.
+func (r *TableRenderer) renderCellAny(val ref.Val) error {
+	_, err := fmt.Fprintf(r.writer, "%s", val)
 	return err
 }

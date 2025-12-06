@@ -19,6 +19,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	iofs "io/fs"
 	"log/slog"
 	"os"
@@ -38,14 +39,14 @@ import (
 // use the NewConsole function instead.
 type ConsoleBuilder struct {
 	logger *slog.Logger
-	file   *os.File
+	writer io.Writer
 }
 
 // Console is helps writing messages to the console. Don't create objects of this type directly, use the NewConsole
 // function instead.
 type Console struct {
 	logger *slog.Logger
-	file   *os.File
+	writer io.Writer
 	engine *templating.Engine
 }
 
@@ -60,10 +61,10 @@ func (b *ConsoleBuilder) SetLogger(value *slog.Logger) *ConsoleBuilder {
 	return b
 }
 
-// SetFile sets the file that the console will use to write messages to the console. This is optional, the default
+// SetWriter sets the writer that the console will use to write messages to the console. This is optional, the default
 // is to use os.Stdout and there is usually no need to change it; it is intended for unit tests.
-func (b *ConsoleBuilder) SetFile(value *os.File) *ConsoleBuilder {
-	b.file = value
+func (b *ConsoleBuilder) SetWriter(value io.Writer) *ConsoleBuilder {
+	b.writer = value
 	return b
 }
 
@@ -85,15 +86,15 @@ func (b *ConsoleBuilder) Build() (result *Console, err error) {
 	}
 
 	// Set the default writer if needed:
-	file := b.file
-	if file == nil {
-		file = os.Stdout
+	writer := b.writer
+	if writer == nil {
+		writer = os.Stdout
 	}
 
 	// Create and populate the object:
 	result = &Console{
 		logger: b.logger,
-		file:   file,
+		writer: writer,
 		engine: engine,
 	}
 	return
@@ -118,7 +119,7 @@ func (c *Console) Printf(ctx context.Context, format string, args ...any) {
 		slog.Any("args", args),
 		slog.Any("text", text),
 	)
-	_, err := c.file.WriteString(text)
+	_, err := c.writer.Write([]byte(text))
 	if err != nil {
 		c.logger.ErrorContext(
 			ctx,
@@ -132,8 +133,8 @@ func (c *Console) Printf(ctx context.Context, format string, args ...any) {
 // Render renders the given template with the given data to stdout. The template should be a template file name that
 // was added via AddTemplatesFS. If no template file systems have been added, this method will log an error.
 func (c *Console) Render(ctx context.Context, template string, data any) {
-	buffer := &bytes.Buffer{}
-	err := c.engine.Execute(buffer, template, data)
+	var buffer bytes.Buffer
+	err := c.engine.Execute(&buffer, template, data)
 	if err != nil {
 		c.logger.ErrorContext(
 			ctx,
@@ -150,11 +151,26 @@ func (c *Console) Render(ctx context.Context, template string, data any) {
 		currentEmpty := len(line) == 0
 		if currentEmpty {
 			if !previousEmpty {
-				fmt.Fprintf(os.Stdout, "\n")
+				_, err := c.writer.Write([]byte("\n"))
+				if err != nil {
+					c.logger.ErrorContext(
+						ctx,
+						"Failed to write empty line",
+						slog.Any("error", err),
+					)
+				}
 				previousEmpty = true
 			}
 		} else {
-			fmt.Fprintf(os.Stdout, "%s\n", line)
+			_, err := c.writer.Write([]byte(line))
+			if err != nil {
+				c.logger.ErrorContext(
+					ctx,
+					"Failed to write line",
+					slog.String("line", line),
+					slog.Any("error", err),
+				)
+			}
 			previousEmpty = false
 		}
 	}
@@ -198,43 +214,55 @@ func (c *Console) RenderYaml(ctx context.Context, data any) {
 // renderColored renders the given text to stdout with syntax highlighting using the specified lexer. If the terminal
 // doesn't support color or an error occurs, it falls back to plain text output.
 func (c *Console) renderColored(ctx context.Context, text string, format string) error {
-	if isatty.IsTerminal(c.file.Fd()) {
-		lexer := lexers.Get(format)
-		if lexer == nil {
-			lexer = lexers.Fallback
-		}
-		style := styles.Get("friendly")
-		if style == nil {
-			style = styles.Fallback
-		}
-		formatter := formatters.Get("terminal256")
-		if formatter == nil {
-			formatter = formatters.Fallback
-		}
-		iterator, err := lexer.Tokenise(nil, text)
-		if err != nil {
-			c.logger.ErrorContext(
-				ctx,
-				"Failed to tokenize text",
-				slog.String("format", format),
-				slog.Any("error", err),
-			)
-			fmt.Fprint(c.file, text)
-			return nil
-		}
-		err = formatter.Format(colorable.NewColorable(c.file), style, iterator)
-		if err != nil {
-			c.logger.ErrorContext(
-				ctx,
-				"Failed to format text",
-				slog.String("format", format),
-				slog.Any("error", err),
-			)
-			fmt.Fprint(c.file, text)
-			return nil
-		}
-		return nil
+	// If the writer isn't a file then we can't decide if it supports color, so we just print the text:
+	file, ok := c.writer.(*os.File)
+	if !ok {
+		_, err := c.writer.Write([]byte(text))
+		return err
 	}
-	fmt.Fprint(c.file, text)
-	return nil
+
+	// If the file isn't a terminal, then we don't want to use color to not interfere with other tools
+	// thayt may want to process the output.
+	if !isatty.IsTerminal(file.Fd()) {
+		_, err := file.Write([]byte(text))
+		return err
+	}
+
+	// If we are here then we can use color:
+	lexer := lexers.Get(format)
+	if lexer == nil {
+		lexer = lexers.Fallback
+	}
+	style := styles.Get(colorStyleName)
+	if style == nil {
+		style = styles.Fallback
+	}
+	formatter := formatters.Get(colorFormatterName)
+	if formatter == nil {
+		formatter = formatters.Fallback
+	}
+	iterator, err := lexer.Tokenise(nil, text)
+	if err != nil {
+		c.logger.ErrorContext(
+			ctx,
+			"Failed to tokenize text",
+			slog.String("format", format),
+			slog.Any("error", err),
+		)
+		_, err := file.Write([]byte(text))
+		return err
+	}
+	return formatter.Format(colorable.NewColorable(file), style, iterator)
 }
+
+// Write is an implementation of the io.Write interface that allows the console to be used as a writer if needed.
+func (c *Console) Write(p []byte) (n int, err error) {
+	n, err = c.writer.Write(p)
+	return
+}
+
+// Details of the color style and formatter used by the console.
+const (
+	colorStyleName     = "friendly"
+	colorFormatterName = "terminal256"
+)
