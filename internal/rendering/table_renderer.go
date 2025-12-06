@@ -21,6 +21,7 @@ import (
 	"io/fs"
 	"log/slog"
 	"path"
+	"reflect"
 	"slices"
 	"strings"
 	"text/tabwriter"
@@ -156,16 +157,29 @@ func (b *TableRendererBuilder) Build() (result *TableRenderer, err error) {
 	return
 }
 
-// Render renders the given objects as a table to stdout.
-func (r *TableRenderer) Render(ctx context.Context, objects []proto.Message) error {
-	// Check if there are any objects:
-	if len(objects) == 0 {
+// Render renders the given objects as a table to stdout. The objects parameter must be a slice of objects that
+// implement the proto.Message interface.
+func (r *TableRenderer) Render(ctx context.Context, objects any) error {
+	// Check that the objects parameter is a slice of objects that implement the proto.Message interface:
+	list := reflect.ValueOf(objects)
+	if list.Kind() != reflect.Slice {
+		return fmt.Errorf(
+			"objects parameter must be a slice of protobuf messages, but it is of type %T",
+			objects,
+		)
+	}
+	if list.Len() == 0 {
 		return nil
 	}
 
+	// Convert the list to a slice of protobuf messages:
+	messages := make([]proto.Message, list.Len())
+	for i := range list.Len() {
+		messages[i] = list.Index(i).Interface().(proto.Message)
+	}
+
 	// Get the object helper from the first object:
-	firstObject := objects[0]
-	descriptor := firstObject.ProtoReflect().Descriptor()
+	descriptor := messages[0].ProtoReflect().Descriptor()
 	helper := r.helper.Lookup(string(descriptor.FullName()))
 	if helper == nil {
 		return fmt.Errorf("failed to find object helper for type %q", descriptor.FullName())
@@ -229,7 +243,7 @@ func (r *TableRenderer) Render(ctx context.Context, objects []proto.Message) err
 	if err != nil {
 		return err
 	}
-	for _, message := range objects {
+	for _, message := range messages {
 		err := r.renderRow(ctx, table.Columns, prgs, message, helper)
 		if err != nil {
 			return err
