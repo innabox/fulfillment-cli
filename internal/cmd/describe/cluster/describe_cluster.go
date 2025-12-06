@@ -15,14 +15,17 @@ package cluster
 
 import (
 	"fmt"
+	"log/slog"
 	"os"
 	"strings"
 	"text/tabwriter"
 
 	ffv1 "github.com/innabox/fulfillment-common/api/fulfillment/v1"
+	"github.com/innabox/fulfillment-common/logging"
 	"github.com/spf13/cobra"
 
 	"github.com/innabox/fulfillment-cli/internal/config"
+	"github.com/innabox/fulfillment-cli/internal/terminal"
 )
 
 func Cmd() *cobra.Command {
@@ -37,6 +40,8 @@ func Cmd() *cobra.Command {
 }
 
 type runnerContext struct {
+	logger  *slog.Logger
+	console *terminal.Console
 }
 
 func (c *runnerContext) run(cmd *cobra.Command, args []string) error {
@@ -52,6 +57,10 @@ func (c *runnerContext) run(cmd *cobra.Command, args []string) error {
 
 	// Get the context:
 	ctx := cmd.Context()
+
+	// Get the logger and console:
+	c.logger = logging.LoggerFromContext(ctx)
+	c.console = terminal.ConsoleFromContext(ctx)
 
 	// Get the configuration:
 	cfg, err := config.Load(ctx)
@@ -80,7 +89,7 @@ func (c *runnerContext) run(cmd *cobra.Command, args []string) error {
 	}
 
 	// Display the clusters:
-	writer := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
+	writer := tabwriter.NewWriter(c.console, 0, 0, 2, ' ', 0)
 	cluster := response.Object
 	template := "-"
 	if cluster.Spec != nil {
