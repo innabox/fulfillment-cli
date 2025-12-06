@@ -13,11 +13,11 @@ You can use the above fully qualified names, or the short names:
 
 For example, to get the list of clusters:
 
-  {{ .Binary }} get fulfillment.v1.Cluster
+  {{ binary }} get fulfillment.v1.Cluster
 
 Or:
 
-  {{ .Binary }} get clusters
+  {{ binary }} get clusters
 
 Note that the short names may be ambiguous if the same object type exists in different packages. In
 that case the one whose fully qualified name appears first in the list will be used.

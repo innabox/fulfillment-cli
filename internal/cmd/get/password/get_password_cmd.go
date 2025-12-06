@@ -17,7 +17,6 @@ import (
 	"embed"
 	"fmt"
 	"log/slog"
-	"os"
 	"slices"
 	"sort"
 
@@ -107,9 +106,7 @@ func (c *runnerContext) run(cmd *cobra.Command, args []string) error {
 
 	// Check the flags:
 	if key == "" {
-		c.console.Render(ctx, "no_key.txt", map[string]any{
-			"Binary": os.Args[0],
-		})
+		c.console.Render(ctx, "no_key.txt", nil)
 		return exit.Error(1)
 	}
 
@@ -145,10 +142,9 @@ func (c *runnerContext) run(cmd *cobra.Command, args []string) error {
 		sort.Strings(ids)
 		ids = slices.Compact(ids)
 		c.console.Render(ctx, "multiple_matches.txt", map[string]any{
-			"Binary": os.Args[0],
-			"Ids":    ids,
-			"Key":    key,
-			"Total":  total,
+			"Ids":   ids,
+			"Key":   key,
+			"Total": total,
 		})
 		return exit.Error(1)
 	}

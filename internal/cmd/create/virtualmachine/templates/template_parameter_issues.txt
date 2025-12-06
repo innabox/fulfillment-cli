@@ -14,6 +14,6 @@ Valid parameters are the following:
 For more details about the template parameters run this:
 {{ end }}
 
-{{ .Binary }} get clustertemplate {{ .Template }} -o yaml
+{{ binary }} get clustertemplate {{ .Template }} -o yaml
 
 Use the '--help' option to get more details about the command.

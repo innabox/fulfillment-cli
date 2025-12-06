@@ -13,11 +13,11 @@ You can use the above fully qualified names, or the short names:
 
 For example, to delete the cluster with identifier '123':
 
-  {{ .Binary }} delete fulfillment.v1.Cluster 123
+  {{ binary }} delete fulfillment.v1.Cluster 123
 
 Or:
 
-  {{ .Binary }} delete cluster 123
+  {{ binary }} delete cluster 123
 
 Note that the short names may be ambiguous if the same object type exists in different packages. In
 that case the one whose fully qualified name appears first in the list will be used.
