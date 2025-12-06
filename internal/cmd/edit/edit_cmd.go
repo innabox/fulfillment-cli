@@ -289,7 +289,7 @@ func (c *runnerContext) findObject(ctx context.Context, ref string) (result prot
 	switch len(items) {
 	case 0:
 		c.console.Render(ctx, "no_matches.txt", map[string]any{
-			"Object": c.helper.String(),
+			"Object": c.helper.Singular(),
 			"Ref":    ref,
 		})
 		return
@@ -299,7 +299,7 @@ func (c *runnerContext) findObject(ctx context.Context, ref string) (result prot
 	default:
 		c.console.Render(ctx, "multiple_matches.txt", map[string]any{
 			"Matches": items,
-			"Object":  c.helper.String(),
+			"Object":  c.helper.Singular(),
 			"Ref":     ref,
 			"Total":   total,
 		})
