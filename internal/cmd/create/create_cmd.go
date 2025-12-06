@@ -35,6 +35,7 @@ import (
 	"github.com/innabox/fulfillment-cli/internal/cmd/create/virtualmachine"
 	"github.com/innabox/fulfillment-cli/internal/config"
 	"github.com/innabox/fulfillment-cli/internal/reflection"
+	"github.com/innabox/fulfillment-cli/internal/terminal"
 )
 
 func Cmd() *cobra.Command {
@@ -50,7 +51,7 @@ func Cmd() *cobra.Command {
 	result.AddCommand(virtualmachine.Cmd())
 	flags := result.Flags()
 	flags.StringVarP(
-		&runner.fileName,
+		&runner.args.file,
 		"filename",
 		"f",
 		"",
@@ -61,17 +62,21 @@ func Cmd() *cobra.Command {
 }
 
 type runnerContext struct {
-	logger   *slog.Logger
-	fileName string
-	conn     *grpc.ClientConn
+	args struct {
+		file string
+	}
+	logger  *slog.Logger
+	console *terminal.Console
+	conn    *grpc.ClientConn
 }
 
 func (c *runnerContext) run(cmd *cobra.Command, args []string) error {
 	// Get the context:
 	ctx := cmd.Context()
 
-	// Get the logger:
+	// Get the logger and console:
 	c.logger = logging.LoggerFromContext(ctx)
+	c.console = terminal.ConsoleFromContext(ctx)
 
 	// Get the configuration:
 	cfg, err := config.Load(ctx)
@@ -100,18 +105,18 @@ func (c *runnerContext) run(cmd *cobra.Command, args []string) error {
 	}
 
 	// Check the flags:
-	if c.fileName == "" {
+	if c.args.file == "" {
 		return fmt.Errorf("it is mandatory to specify the input file with the '--filename' or '-f' options")
 	}
 
 	// Open the input:
 	var reader io.ReadCloser
-	if c.fileName == "-" {
+	if c.args.file == "-" {
 		reader = os.Stdin
 	} else {
-		reader, err = os.Open(c.fileName)
+		reader, err = os.Open(c.args.file)
 		if err != nil {
-			return fmt.Errorf("failed to open the file '%s': %w", c.fileName, err)
+			return fmt.Errorf("failed to open the file '%s': %w", c.args.file, err)
 		}
 		defer func() {
 			reader.Close()
@@ -120,7 +125,7 @@ func (c *runnerContext) run(cmd *cobra.Command, args []string) error {
 					ctx,
 					slog.LevelError,
 					"Failed to close file",
-					slog.String("file", c.fileName),
+					slog.String("file", c.args.file),
 					slog.Any("error", err),
 				)
 			}
@@ -134,20 +139,31 @@ func (c *runnerContext) run(cmd *cobra.Command, args []string) error {
 	}
 	for i, object := range objects {
 		objectDesc := object.ProtoReflect().Descriptor()
-		objectName := string(objectDesc.FullName())
-		objectHelper := helper.Lookup(objectName)
+		objectType := string(objectDesc.FullName())
+		objectHelper := helper.Lookup(objectType)
 		if objectHelper == nil {
-			return fmt.Errorf("input object at index %d is of an unknown type '%s'", i, objectName)
+			return fmt.Errorf("input object at index %d is of an unknown type '%s'", i, objectType)
 		}
 		object, err = objectHelper.Create(ctx, object)
 		if err != nil {
 			return fmt.Errorf("failed to create object at index %d: %w", i, err)
 		}
-		type objectIface interface {
-			GetId() string
+		objectSingular := objectHelper.Singular()
+		objectId := objectHelper.GetId(object)
+		objectName := objectHelper.GetName(object)
+		if objectName != "" {
+			c.console.Printf(
+				ctx,
+				"Created %s with name '%s' and identifier '%s'.\n",
+				objectSingular, objectName, objectId,
+			)
+		} else {
+			c.console.Printf(
+				ctx,
+				"Created %s with identifier '%s'.\n",
+				objectSingular, objectId,
+			)
 		}
-		objectId := object.(objectIface).GetId()
-		fmt.Printf("Created %s '%s'.\n", objectHelper.Singular(), objectId)
 	}
 
 	return nil
