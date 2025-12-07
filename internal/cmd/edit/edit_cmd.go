@@ -241,8 +241,14 @@ func (c *runnerContext) run(cmd *cobra.Command, args []string) error {
 	}
 
 	// Save the result:
-	_, err = c.update(ctx, object)
-	return err
+	updated, err := c.update(ctx, object)
+	if err != nil {
+		return err
+	}
+
+	c.showWatchSuggestion(ctx, updated)
+
+	return nil
 }
 
 // findEditor tries to find the name of the editor command. It will first try with the content of the `EDITOR` and
@@ -310,6 +316,14 @@ func (c *runnerContext) findObject(ctx context.Context, ref string) (result prot
 func (c *runnerContext) update(ctx context.Context, object proto.Message) (result proto.Message, err error) {
 	result, err = c.helper.Update(ctx, object)
 	return
+}
+
+func (c *runnerContext) showWatchSuggestion(ctx context.Context, object proto.Message) {
+	objectId := c.helper.GetId(object)
+	c.console.Render(ctx, "watch_suggestion.txt", map[string]any{
+		"Object": c.helper.Singular(),
+		"Id":     objectId,
+	})
 }
 
 func (c *runnerContext) renderJson(object proto.Message) (result []byte, err error) {
