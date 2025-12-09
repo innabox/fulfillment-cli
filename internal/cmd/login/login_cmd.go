@@ -134,6 +134,16 @@ func Cmd() *cobra.Command {
 		[]string{},
 		"Comma separated list of OAuth scopes to request.",
 	)
+	flags.StringVar(
+		&runner.args.oauthRedirectUri,
+		"oauth-redirect-uri",
+		defaultRedirectUri,
+		fmt.Sprintf(
+			"Redirect URI to use for the OAuth code flow. The default value '%s' means "+
+				"binding to localhost on a randomly selected port.",
+			defaultRedirectUri,
+		),
+	)
 	flags.MarkHidden("address")
 	flags.MarkHidden("private")
 	flags.MarkHidden("token")
@@ -162,6 +172,7 @@ type runnerContext struct {
 		oauthClientId     string
 		oauthClientSecret string
 		oauthScopes       []string
+		oauthRedirectUri  string
 	}
 }
 
@@ -319,6 +330,7 @@ func (c *runnerContext) run(cmd *cobra.Command, args []string) error {
 		cfg.OAuthClientId = c.args.oauthClientId
 		cfg.OAuthClientSecret = c.args.oauthClientSecret
 		cfg.OAuthScopes = c.args.oauthScopes
+		cfg.OAuthRedirectUri = c.args.oauthRedirectUri
 	}
 
 	// Replace the gRPC anonymous connection with the authenticated one:
@@ -447,6 +459,7 @@ func (c *runnerContext) createTokenSource(ctx context.Context, tokenIssuer strin
 			SetClientId(c.args.oauthClientId).
 			SetClientSecret(c.args.oauthClientSecret).
 			SetScopes(c.args.oauthScopes...).
+			SetRedirectUri(c.args.oauthRedirectUri).
 			Build()
 		if err != nil {
 			err = fmt.Errorf("failed to create OAuth token source: %w", err)
@@ -511,3 +524,7 @@ func (l *oauthFlowListener) End(ctx context.Context, event oauth.FlowEndEvent) e
 	}
 	return nil
 }
+
+// defaultRedirectUri is the default redirect URI used for the OAuth code flow. The value 'http://localhost:0' means
+// binding to localhost on a randomly selected port.
+const defaultRedirectUri = "http://localhost:0"
