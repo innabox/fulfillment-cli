@@ -107,7 +107,7 @@ func Cmd() *cobra.Command {
 	flags.StringVar(
 		&runner.args.oauthFlow,
 		"oauth-flow",
-		string(oauth.CodeFlow),
+		string(oauth.DeviceFlow),
 		fmt.Sprintf(
 			"OAuth flow to use. Must be '%s', '%s' or '%s'.",
 			oauth.CodeFlow, oauth.DeviceFlow, oauth.CredentialsFlow,
