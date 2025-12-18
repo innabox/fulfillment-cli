@@ -218,6 +218,96 @@ func (s *HostPoolsServerFuncs) Update(ctx context.Context,
 }
 
 // Make sure that we implement the interface.
+var _ ffv1.ComputeInstancesServer = (*ComputeInstancesServerFuncs)(nil)
+
+// ComputeInstancesServerFuncs is an implementation of the compute instances server that uses configurable functions to implement the
+// methods.
+type ComputeInstancesServerFuncs struct {
+	ffv1.UnimplementedComputeInstancesServer
+
+	CreateFunc func(context.Context, *ffv1.ComputeInstancesCreateRequest) (*ffv1.ComputeInstancesCreateResponse, error)
+	DeleteFunc func(context.Context, *ffv1.ComputeInstancesDeleteRequest) (*ffv1.ComputeInstancesDeleteResponse, error)
+	GetFunc    func(context.Context, *ffv1.ComputeInstancesGetRequest) (*ffv1.ComputeInstancesGetResponse, error)
+	ListFunc   func(context.Context, *ffv1.ComputeInstancesListRequest) (*ffv1.ComputeInstancesListResponse, error)
+	UpdateFunc func(context.Context, *ffv1.ComputeInstancesUpdateRequest) (*ffv1.ComputeInstancesUpdateResponse, error)
+}
+
+func (s *ComputeInstancesServerFuncs) Create(ctx context.Context,
+	request *ffv1.ComputeInstancesCreateRequest) (response *ffv1.ComputeInstancesCreateResponse, err error) {
+	response, err = s.CreateFunc(ctx, request)
+	return
+}
+
+func (s *ComputeInstancesServerFuncs) Delete(ctx context.Context,
+	request *ffv1.ComputeInstancesDeleteRequest) (response *ffv1.ComputeInstancesDeleteResponse, err error) {
+	response, err = s.DeleteFunc(ctx, request)
+	return
+}
+
+func (s *ComputeInstancesServerFuncs) Get(ctx context.Context,
+	request *ffv1.ComputeInstancesGetRequest) (response *ffv1.ComputeInstancesGetResponse, err error) {
+	response, err = s.GetFunc(ctx, request)
+	return
+}
+
+func (s *ComputeInstancesServerFuncs) List(ctx context.Context,
+	request *ffv1.ComputeInstancesListRequest) (response *ffv1.ComputeInstancesListResponse, err error) {
+	response, err = s.ListFunc(ctx, request)
+	return
+}
+
+func (s *ComputeInstancesServerFuncs) Update(ctx context.Context,
+	request *ffv1.ComputeInstancesUpdateRequest) (response *ffv1.ComputeInstancesUpdateResponse, err error) {
+	response, err = s.UpdateFunc(ctx, request)
+	return
+}
+
+// Make sure that we implement the interface.
+var _ ffv1.ComputeInstanceTemplatesServer = (*ComputeInstanceTemplatesServerFuncs)(nil)
+
+// ComputeInstanceTemplatesServerFuncs is an implementation of the compute instance templates server that uses configurable functions to implement the
+// methods.
+type ComputeInstanceTemplatesServerFuncs struct {
+	ffv1.UnimplementedComputeInstanceTemplatesServer
+
+	CreateFunc func(context.Context, *ffv1.ComputeInstanceTemplatesCreateRequest) (*ffv1.ComputeInstanceTemplatesCreateResponse, error)
+	DeleteFunc func(context.Context, *ffv1.ComputeInstanceTemplatesDeleteRequest) (*ffv1.ComputeInstanceTemplatesDeleteResponse, error)
+	GetFunc    func(context.Context, *ffv1.ComputeInstanceTemplatesGetRequest) (*ffv1.ComputeInstanceTemplatesGetResponse, error)
+	ListFunc   func(context.Context, *ffv1.ComputeInstanceTemplatesListRequest) (*ffv1.ComputeInstanceTemplatesListResponse, error)
+	UpdateFunc func(context.Context, *ffv1.ComputeInstanceTemplatesUpdateRequest) (*ffv1.ComputeInstanceTemplatesUpdateResponse, error)
+}
+
+func (s *ComputeInstanceTemplatesServerFuncs) Create(ctx context.Context,
+	request *ffv1.ComputeInstanceTemplatesCreateRequest) (response *ffv1.ComputeInstanceTemplatesCreateResponse, err error) {
+	response, err = s.CreateFunc(ctx, request)
+	return
+}
+
+func (s *ComputeInstanceTemplatesServerFuncs) Delete(ctx context.Context,
+	request *ffv1.ComputeInstanceTemplatesDeleteRequest) (response *ffv1.ComputeInstanceTemplatesDeleteResponse, err error) {
+	response, err = s.DeleteFunc(ctx, request)
+	return
+}
+
+func (s *ComputeInstanceTemplatesServerFuncs) Get(ctx context.Context,
+	request *ffv1.ComputeInstanceTemplatesGetRequest) (response *ffv1.ComputeInstanceTemplatesGetResponse, err error) {
+	response, err = s.GetFunc(ctx, request)
+	return
+}
+
+func (s *ComputeInstanceTemplatesServerFuncs) List(ctx context.Context,
+	request *ffv1.ComputeInstanceTemplatesListRequest) (response *ffv1.ComputeInstanceTemplatesListResponse, err error) {
+	response, err = s.ListFunc(ctx, request)
+	return
+}
+
+func (s *ComputeInstanceTemplatesServerFuncs) Update(ctx context.Context,
+	request *ffv1.ComputeInstanceTemplatesUpdateRequest) (response *ffv1.ComputeInstanceTemplatesUpdateResponse, err error) {
+	response, err = s.UpdateFunc(ctx, request)
+	return
+}
+
+// Make sure that we implement the interface.
 var _ eventsv1.EventsServer = (*EventsServerFuncs)(nil)
 
 // EventsServerFuncs is an implementation of the events server that uses configurable functions to implement the

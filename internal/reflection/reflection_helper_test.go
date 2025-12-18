@@ -135,11 +135,11 @@ var _ = Describe("Reflection helper", func() {
 			Expect(helper.Singulars()).To(ConsistOf(
 				"cluster",
 				"clustertemplate",
+				"computeinstance",
+				"computeinstancetemplate",
 				"host",
 				"hostclass",
 				"hostpool",
-				"virtualmachine",
-				"virtualmachinetemplate",
 			))
 		})
 
@@ -147,11 +147,11 @@ var _ = Describe("Reflection helper", func() {
 			Expect(helper.Plurals()).To(ConsistOf(
 				"clusters",
 				"clustertemplates",
+				"computeinstances",
+				"computeinstancetemplates",
 				"hostclasses",
 				"hostpools",
 				"hosts",
-				"virtualmachines",
-				"virtualmachinetemplates",
 			))
 		})
 
@@ -229,14 +229,14 @@ var _ = Describe("Reflection helper", func() {
 				"fulfillment.v1.HostClass",
 			),
 			Entry(
-				"Virtual machine template",
-				"virtualmachinetemplate",
-				"fulfillment.v1.VirtualMachineTemplate",
+				"Compute instance template",
+				"computeinstancetemplate",
+				"fulfillment.v1.ComputeInstanceTemplate",
 			),
 			Entry(
-				"Virtual machine",
-				"virtualmachine",
-				"fulfillment.v1.VirtualMachine",
+				"Compute instance",
+				"computeinstance",
+				"fulfillment.v1.ComputeInstance",
 			),
 			Entry(
 				"Host",

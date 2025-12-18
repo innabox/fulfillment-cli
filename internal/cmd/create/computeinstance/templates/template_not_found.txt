@@ -7,7 +7,7 @@ The following are some of the valid templates:
 
 To see the complete list of templates use the following command:
 
-{{ binary }} get virtualmachinetemplates
+{{ binary }} get computeinstancetemplates
 {{ end }}
 
 Use the '--help' option to get more details about the command.

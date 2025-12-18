@@ -11,7 +11,7 @@ Unless required by applicable law or agreed to in writing, software distributed 
 language governing permissions and limitations under the License.
 */
 
-package virtualmachine
+package computeinstance
 
 import (
 	"fmt"
@@ -28,12 +28,12 @@ import (
 	"github.com/innabox/fulfillment-common/logging"
 )
 
-// Cmd creates the command to describe a virtual machine.
+// Cmd creates the command to describe a compute instance.
 func Cmd() *cobra.Command {
 	runner := &runnerContext{}
 	result := &cobra.Command{
-		Use:   "virtualmachine [flags] ID",
-		Short: "Describe a virtual machine",
+		Use:   "computeinstance [flags] ID",
+		Short: "Describe a compute instance",
 		RunE:  runner.run,
 	}
 	return result
@@ -45,11 +45,11 @@ type runnerContext struct {
 }
 
 func (c *runnerContext) run(cmd *cobra.Command, args []string) error {
-	// Check that there is exactly one virtual machine ID specified
+	// Check that there is exactly one compute instance ID specified
 	if len(args) != 1 {
 		fmt.Fprintf(
 			os.Stderr,
-			"Expected exactly one virtual machine ID\n",
+			"Expected exactly one compute instance ID\n",
 		)
 		os.Exit(1)
 	}
@@ -78,30 +78,30 @@ func (c *runnerContext) run(cmd *cobra.Command, args []string) error {
 	}
 	defer conn.Close()
 
-	// Create the client for the virtual machines service:
-	client := ffv1.NewVirtualMachinesClient(conn)
+	// Create the client for the compute instances service:
+	client := ffv1.NewComputeInstancesClient(conn)
 
-	// Get the virtual machine:
-	response, err := client.Get(ctx, ffv1.VirtualMachinesGetRequest_builder{
+	// Get the compute instance:
+	response, err := client.Get(ctx, ffv1.ComputeInstancesGetRequest_builder{
 		Id: id,
 	}.Build())
 	if err != nil {
-		return fmt.Errorf("failed to describe virtual machine: %w", err)
+		return fmt.Errorf("failed to describe compute instance: %w", err)
 	}
 
-	// Display the virtual machine:
+	// Display the compute instance:
 	writer := tabwriter.NewWriter(c.console, 0, 0, 2, ' ', 0)
-	vm := response.Object
+	ci := response.Object
 	template := "-"
-	if vm.Spec != nil {
-		template = vm.Spec.Template
+	if ci.Spec != nil {
+		template = ci.Spec.Template
 	}
 	state := "-"
-	if vm.Status != nil {
-		state = vm.Status.State.String()
-		state = strings.Replace(state, "VIRTUAL_MACHINE_STATE_", "", -1)
+	if ci.Status != nil {
+		state = ci.Status.State.String()
+		state = strings.Replace(state, "COMPUTE_INSTANCE_STATE_", "", -1)
 	}
-	fmt.Fprintf(writer, "ID:\t%s\n", vm.Id)
+	fmt.Fprintf(writer, "ID:\t%s\n", ci.Id)
 	fmt.Fprintf(writer, "Template:\t%s\n", template)
 	fmt.Fprintf(writer, "State:\t%s\n", state)
 	writer.Flush()
