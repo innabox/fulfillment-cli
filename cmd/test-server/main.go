@@ -21,10 +21,12 @@ import (
 	"fmt"
 	"log"
 	"net"
+	"strings"
 
 	eventsv1 "github.com/innabox/fulfillment-common/api/events/v1"
 	ffv1 "github.com/innabox/fulfillment-common/api/fulfillment/v1"
 	metadatav1 "github.com/innabox/fulfillment-common/api/metadata/v1"
+	sharedv1 "github.com/innabox/fulfillment-common/api/shared/v1"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/health"
 	"google.golang.org/grpc/health/grpc_health_v1"
@@ -83,6 +85,140 @@ func (s *clustersServer) List(ctx context.Context, request *ffv1.ClustersListReq
 	return &ffv1.ClustersListResponse{}, nil
 }
 
+// Simple mock compute instances server for testing
+type computeInstancesServer struct {
+	ffv1.UnimplementedComputeInstancesServer
+}
+
+func (s *computeInstancesServer) Create(ctx context.Context, request *ffv1.ComputeInstancesCreateRequest) (*ffv1.ComputeInstancesCreateResponse, error) {
+	instance := request.GetObject()
+
+	// Set mock ID and state if not already set
+	if instance.Id == "" {
+		instance.Id = "ci-mock-12345"
+	}
+	if instance.Status == nil {
+		instance.Status = &ffv1.ComputeInstanceStatus{
+			State: ffv1.ComputeInstanceState_COMPUTE_INSTANCE_STATE_PROGRESSING,
+		}
+	}
+
+	log.Printf("Created compute instance: %s (name: %s, template: %s)",
+		instance.Id,
+		instance.GetMetadata().GetName(),
+		instance.GetSpec().GetTemplate())
+
+	return &ffv1.ComputeInstancesCreateResponse{Object: instance}, nil
+}
+
+func (s *computeInstancesServer) Get(ctx context.Context, request *ffv1.ComputeInstancesGetRequest) (*ffv1.ComputeInstancesGetResponse, error) {
+	// Return a mock instance
+	instance := &ffv1.ComputeInstance{
+		Id: request.Id,
+		Metadata: &sharedv1.Metadata{
+			Name: "mock-instance",
+		},
+		Spec: &ffv1.ComputeInstanceSpec{
+			Template: "small-instance",
+		},
+		Status: &ffv1.ComputeInstanceStatus{
+			State:     ffv1.ComputeInstanceState_COMPUTE_INSTANCE_STATE_READY,
+			IpAddress: "192.168.1.100",
+		},
+	}
+
+	log.Printf("Retrieved compute instance: %s", request.Id)
+	return &ffv1.ComputeInstancesGetResponse{Object: instance}, nil
+}
+
+func (s *computeInstancesServer) List(ctx context.Context, request *ffv1.ComputeInstancesListRequest) (*ffv1.ComputeInstancesListResponse, error) {
+	// Return a mock list with one instance
+	instance := &ffv1.ComputeInstance{
+		Id: "ci-mock-12345",
+		Metadata: &sharedv1.Metadata{
+			Name: "mock-instance",
+		},
+		Spec: &ffv1.ComputeInstanceSpec{
+			Template: "small-instance",
+		},
+		Status: &ffv1.ComputeInstanceStatus{
+			State:     ffv1.ComputeInstanceState_COMPUTE_INSTANCE_STATE_READY,
+			IpAddress: "192.168.1.100",
+		},
+	}
+
+	size := int32(1)
+	total := int32(1)
+	log.Printf("Listed compute instances")
+	return &ffv1.ComputeInstancesListResponse{
+		Items: []*ffv1.ComputeInstance{instance},
+		Size:  &size,
+		Total: &total,
+	}, nil
+}
+
+// Simple mock compute instance templates server
+type computeInstanceTemplatesServer struct {
+	ffv1.UnimplementedComputeInstanceTemplatesServer
+}
+
+func (s *computeInstanceTemplatesServer) Get(ctx context.Context, request *ffv1.ComputeInstanceTemplatesGetRequest) (*ffv1.ComputeInstanceTemplatesGetResponse, error) {
+	// Return a mock template
+	template := &ffv1.ComputeInstanceTemplate{
+		Id: request.Id,
+		Metadata: &sharedv1.Metadata{
+			Name: request.Id,
+		},
+	}
+
+	log.Printf("Retrieved compute instance template: %s", request.Id)
+	return &ffv1.ComputeInstanceTemplatesGetResponse{Object: template}, nil
+}
+
+func (s *computeInstanceTemplatesServer) List(ctx context.Context, request *ffv1.ComputeInstanceTemplatesListRequest) (*ffv1.ComputeInstanceTemplatesListResponse, error) {
+	// All available templates
+	allTemplates := []*ffv1.ComputeInstanceTemplate{
+		{
+			Id: "tpl-small-001",
+			Metadata: &sharedv1.Metadata{
+				Name: "small-instance",
+			},
+		},
+		{
+			Id: "tpl-large-001",
+			Metadata: &sharedv1.Metadata{
+				Name: "large-instance",
+			},
+		},
+	}
+
+	// Apply filter if provided (simple string matching for mock purposes)
+	filter := request.GetFilter()
+	var templates []*ffv1.ComputeInstanceTemplate
+
+	if filter != "" {
+		// Simple filter: check if filter contains the template ID or name
+		// This is a mock implementation - real server would parse CEL expressions
+		for _, tmpl := range allTemplates {
+			// Check if filter mentions this template's ID or name
+			if strings.Contains(filter, tmpl.Id) || strings.Contains(filter, tmpl.GetMetadata().GetName()) {
+				templates = append(templates, tmpl)
+			}
+		}
+	} else {
+		templates = allTemplates
+	}
+
+	size := int32(len(templates))
+	total := int32(len(templates))
+	log.Printf("Listed compute instance templates (filter: %q, matches: %d)", filter, len(templates))
+	return &ffv1.ComputeInstanceTemplatesListResponse{
+		Items: templates,
+		Size:  &size,
+		Total: &total,
+	}, nil
+}
+
 // Dummy metadata server - required for login
 type metadataServer struct {
 	metadatav1.UnimplementedMetadataServer
@@ -119,6 +255,8 @@ func main() {
 	eventsv1.RegisterEventsServer(grpcServer, &loggingEventsServer{EventsServerFuncs: eventsServerFuncs})
 
 	ffv1.RegisterClustersServer(grpcServer, &clustersServer{})
+	ffv1.RegisterComputeInstancesServer(grpcServer, &computeInstancesServer{})
+	ffv1.RegisterComputeInstanceTemplatesServer(grpcServer, &computeInstanceTemplatesServer{})
 	metadatav1.RegisterMetadataServer(grpcServer, &metadataServer{})
 
 	// Register health service
@@ -133,8 +271,14 @@ func main() {
 	fmt.Println("========================================")
 	fmt.Printf("Listening on: %s\n", listener.Addr().String())
 	fmt.Println("")
-	fmt.Println("To test watch functionality, run in another terminal:")
-	fmt.Printf("  export FULFILLMENT_URL=http://127.0.0.1:%s\n", serverPort)
+	fmt.Println("To test with the CLI, run in another terminal:")
+	fmt.Println("")
+	fmt.Println("1. Login:")
+	fmt.Printf("  ./fulfillment-cli login --plaintext http://127.0.0.1:%s\n", serverPort)
+	fmt.Println("")
+	fmt.Println("2. Test commands:")
+	fmt.Println("  ./fulfillment-cli create computeinstance --template tpl-small-001 --name test-instance")
+	fmt.Println("  ./fulfillment-cli describe computeinstance ci-mock-12345")
 	fmt.Println("  ./fulfillment-cli get clusters --watch")
 	fmt.Println("")
 	fmt.Println("Press Ctrl+C to stop the server")

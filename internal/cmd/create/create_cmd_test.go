@@ -21,9 +21,9 @@ import (
 	"google.golang.org/protobuf/proto"
 
 	"github.com/innabox/fulfillment-cli/internal/cmd/create/cluster"
+	"github.com/innabox/fulfillment-cli/internal/cmd/create/computeinstance"
 	"github.com/innabox/fulfillment-cli/internal/cmd/create/hostpool"
 	"github.com/innabox/fulfillment-cli/internal/cmd/create/hub"
-	"github.com/innabox/fulfillment-cli/internal/cmd/create/virtualmachine"
 	ffv1 "github.com/innabox/fulfillment-common/api/fulfillment/v1"
 	privatev1 "github.com/innabox/fulfillment-common/api/private/v1"
 )
@@ -36,9 +36,9 @@ var _ = Describe("Create command", func() {
 			Expect(cmd.Aliases).To(ContainElement(expectedAlias))
 		},
 		Entry("cluster", cluster.Cmd, (*ffv1.Cluster)(nil)),
+		Entry("computeinstance", computeinstance.Cmd, (*ffv1.ComputeInstance)(nil)),
 		Entry("hostpool", hostpool.Cmd, (*ffv1.HostPool)(nil)),
 		Entry("hub", hub.Cmd, (*privatev1.Hub)(nil)),
-		Entry("virtualmachine", virtualmachine.Cmd, (*ffv1.VirtualMachine)(nil)),
 	)
 
 	Describe("Subcommands", func() {
@@ -51,7 +51,7 @@ var _ = Describe("Create command", func() {
 				subcommandNames = append(subcommandNames, subcmd.Name())
 			}
 
-			Expect(subcommandNames).To(ContainElements("cluster", "hostpool", "hub", "virtualmachine"))
+			Expect(subcommandNames).To(ContainElements("cluster", "computeinstance", "hostpool", "hub"))
 		})
 	})
 })

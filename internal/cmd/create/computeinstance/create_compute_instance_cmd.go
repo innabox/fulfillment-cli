@@ -11,7 +11,7 @@ Unless required by applicable law or agreed to in writing, software distributed 
 language governing permissions and limitations under the License.
 */
 
-package virtualmachine
+package computeinstance
 
 import (
 	"context"
@@ -47,9 +47,9 @@ var templatesFS embed.FS
 func Cmd() *cobra.Command {
 	runner := &runnerContext{}
 	result := &cobra.Command{
-		Use:     "virtualmachine [flags]",
-		Aliases: []string{string(proto.MessageName((*ffv1.VirtualMachine)(nil)))},
-		Short:   "Create a virtual machine",
+		Use:     "computeinstance [flags]",
+		Aliases: []string{string(proto.MessageName((*ffv1.ComputeInstance)(nil)))},
+		Short:   "Create a compute instance",
 		RunE:    runner.run,
 	}
 	flags := result.Flags()
@@ -58,7 +58,7 @@ func Cmd() *cobra.Command {
 		"name",
 		"n",
 		"",
-		"Name of the virtual machine.",
+		"Name of the compute instance.",
 	)
 	flags.StringVarP(
 		&runner.args.template,
@@ -91,10 +91,10 @@ type runnerContext struct {
 		templateParameterValues []string
 		templateParameterFiles  []string
 	}
-	logger                *slog.Logger
-	console               *terminal.Console
-	templatesClient       ffv1.VirtualMachineTemplatesClient
-	virtualMachinesClient ffv1.VirtualMachinesClient
+	logger                 *slog.Logger
+	console                *terminal.Console
+	templatesClient        ffv1.ComputeInstanceTemplatesClient
+	computeInstancesClient ffv1.ComputeInstancesClient
 }
 
 func (c *runnerContext) run(cmd *cobra.Command, args []string) error {
@@ -146,10 +146,10 @@ func (c *runnerContext) run(cmd *cobra.Command, args []string) error {
 	c.console.SetHelper(helper)
 
 	// Create the gRPC clients:
-	c.templatesClient = ffv1.NewVirtualMachineTemplatesClient(conn)
-	c.virtualMachinesClient = ffv1.NewVirtualMachinesClient(conn)
+	c.templatesClient = ffv1.NewComputeInstanceTemplatesClient(conn)
+	c.computeInstancesClient = ffv1.NewComputeInstancesClient(conn)
 
-	// Fetch the virtual machine template:
+	// Fetch the compute instance template:
 	template, err := c.findTemplate(ctx)
 	if err != nil {
 		return err
@@ -170,42 +170,42 @@ func (c *runnerContext) run(cmd *cobra.Command, args []string) error {
 		return exit.Error(1)
 	}
 
-	// Prepare the virtual machine:
-	virtualMachine := ffv1.VirtualMachine_builder{
+	// Prepare the compute instance:
+	computeInstance := ffv1.ComputeInstance_builder{
 		Metadata: sharedv1.Metadata_builder{
 			Name: c.args.name,
 		}.Build(),
-		Spec: ffv1.VirtualMachineSpec_builder{
+		Spec: ffv1.ComputeInstanceSpec_builder{
 			Template:           template.GetId(),
 			TemplateParameters: templateParameterValues,
 		}.Build(),
 	}.Build()
 
-	// Create the virtual machine:
-	response, err := c.virtualMachinesClient.Create(ctx, ffv1.VirtualMachinesCreateRequest_builder{
-		Object: virtualMachine,
+	// Create the compute instance:
+	response, err := c.computeInstancesClient.Create(ctx, ffv1.ComputeInstancesCreateRequest_builder{
+		Object: computeInstance,
 	}.Build())
 	if err != nil {
-		return fmt.Errorf("failed to create virtual machine: %w", err)
+		return fmt.Errorf("failed to create compute instance: %w", err)
 	}
 
 	// Display the result:
-	virtualMachine = response.Object
-	c.console.Printf(ctx, "Created virtual machine '%s'.\n", virtualMachine.Id)
+	computeInstance = response.Object
+	c.console.Printf(ctx, "Created compute instance '%s'.\n", computeInstance.Id)
 
 	return nil
 }
 
-// findTemplate finds a virtual machine template by identifier or name. It tries to find by identifier or name using a
+// findTemplate finds a compute instance template by identifier or name. It tries to find by identifier or name using a
 // server-side filter. If there is exactly one match it returns it. If there are multiple matches it displays them to
 // the user and returns an error. If there are no matches it displays available templates and returns an error.
-func (c *runnerContext) findTemplate(ctx context.Context) (result *ffv1.VirtualMachineTemplate, err error) {
+func (c *runnerContext) findTemplate(ctx context.Context) (result *ffv1.ComputeInstanceTemplate, err error) {
 	// Try to find the template by identifier or name using a filter:
 	filter := fmt.Sprintf(
 		"this.id == %[1]q || this.metadata.name == %[1]q",
 		c.args.template,
 	)
-	response, err := c.templatesClient.List(ctx, ffv1.VirtualMachineTemplatesListRequest_builder{
+	response, err := c.templatesClient.List(ctx, ffv1.ComputeInstanceTemplatesListRequest_builder{
 		Filter: proto.String(filter),
 		Limit:  proto.Int32(10),
 	}.Build())
@@ -233,7 +233,7 @@ func (c *runnerContext) findTemplate(ctx context.Context) (result *ffv1.VirtualM
 	}
 
 	// If we are here then no matches were found, we will show to the user some of the available templates:
-	response, err = c.templatesClient.List(ctx, ffv1.VirtualMachineTemplatesListRequest_builder{
+	response, err = c.templatesClient.List(ctx, ffv1.ComputeInstanceTemplatesListRequest_builder{
 		Limit: proto.Int32(10),
 	}.Build())
 	if err != nil {
@@ -251,12 +251,12 @@ func (c *runnerContext) findTemplate(ctx context.Context) (result *ffv1.VirtualM
 // parseTemplateParameters parses the '--template-parameter' and '--template-parameter-file' flags into a map of
 // parameter name to value, and a list of issues found. The issues are intended for display to the user.
 func (c *runnerContext) parseTemplateParameters(ctx context.Context,
-	template *ffv1.VirtualMachineTemplate) (result map[string]*anypb.Any, issues []string) {
+	template *ffv1.ComputeInstanceTemplate) (result map[string]*anypb.Any, issues []string) {
 	// Prepare empty results and issues:
 	result = map[string]*anypb.Any{}
 
 	// Make a map of parameter definitions indexed by name for quick lookup:
-	definitions := map[string]*ffv1.VirtualMachineTemplateParameterDefinition{}
+	definitions := map[string]*ffv1.ComputeInstanceTemplateParameterDefinition{}
 	for _, definition := range template.GetParameters() {
 		definitions[definition.GetName()] = definition
 	}
@@ -406,7 +406,7 @@ func (c *runnerContext) parseTemplateParameters(ctx context.Context,
 	}
 
 	// Add issues for missing required parameters, at the end of the list and sorted by parameter name:
-	var missing []*ffv1.VirtualMachineTemplateParameterDefinition
+	var missing []*ffv1.ComputeInstanceTemplateParameterDefinition
 	for _, definition := range template.GetParameters() {
 		if definition.GetRequired() && result[definition.GetName()] == nil {
 			missing = append(missing, definition)
@@ -577,7 +577,7 @@ type validTemplateParameter struct {
 }
 
 // validTemplateParameters returns the list of valid template parameters for the given template.
-func (c *runnerContext) validTemplateParameters(template *ffv1.VirtualMachineTemplate) []validTemplateParameter {
+func (c *runnerContext) validTemplateParameters(template *ffv1.ComputeInstanceTemplate) []validTemplateParameter {
 	// Prepare the results:
 	results := []validTemplateParameter{}
 	for _, parameter := range template.GetParameters() {

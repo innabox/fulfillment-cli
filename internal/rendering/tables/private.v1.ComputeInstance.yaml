@@ -21,12 +21,12 @@ columns:
 
 - header: TEMPLATE
   value: this.spec.template
-  type: private.v1.VirtualMachineTemplate
+  type: private.v1.ComputeInstanceTemplate
   lookup: true
 
 - header: STATE
   value: this.status.state
-  type: private.v1.VirtualMachineState
+  type: private.v1.ComputeInstanceState
 
 - header: HUB
   value: this.status.hub

@@ -17,9 +17,9 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/innabox/fulfillment-cli/internal/cmd/describe/cluster"
+	"github.com/innabox/fulfillment-cli/internal/cmd/describe/computeinstance"
 	"github.com/innabox/fulfillment-cli/internal/cmd/describe/host"
 	"github.com/innabox/fulfillment-cli/internal/cmd/describe/hostpool"
-	"github.com/innabox/fulfillment-cli/internal/cmd/describe/virtualmachine"
 )
 
 func Cmd() *cobra.Command {
@@ -28,8 +28,8 @@ func Cmd() *cobra.Command {
 		Short: "Describe a resource",
 	}
 	result.AddCommand(cluster.Cmd())
+	result.AddCommand(computeinstance.Cmd())
 	result.AddCommand(host.Cmd())
 	result.AddCommand(hostpool.Cmd())
-	result.AddCommand(virtualmachine.Cmd())
 	return result
 }
