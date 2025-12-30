@@ -21,25 +21,21 @@ import (
 	"fmt"
 	"log"
 	"net"
-	"strings"
 
 	eventsv1 "github.com/innabox/fulfillment-common/api/events/v1"
 	ffv1 "github.com/innabox/fulfillment-common/api/fulfillment/v1"
 	metadatav1 "github.com/innabox/fulfillment-common/api/metadata/v1"
 	"google.golang.org/grpc"
-	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/health"
 	"google.golang.org/grpc/health/grpc_health_v1"
 	"google.golang.org/grpc/reflection"
-	"google.golang.org/grpc/status"
 
 	"github.com/innabox/fulfillment-cli/internal/testing"
 )
 
 const (
-	serverPort                         = "8080"
-	defaultScenarioFile                = "internal/testing/testdata/cluster-lifecycle.yaml"
-	defaultComputeInstanceScenarioFile = "internal/testing/testdata/compute-instances-and-templates.yaml"
+	serverPort          = "8080"
+	defaultScenarioFile = "internal/testing/testdata/cluster-lifecycle.yaml"
 )
 
 // loggingEventsServer wraps EventsServerFuncs to add logging for the standalone server
@@ -87,147 +83,6 @@ func (s *clustersServer) List(ctx context.Context, request *ffv1.ClustersListReq
 	return &ffv1.ClustersListResponse{}, nil
 }
 
-// Simple mock compute instances server for testing
-type computeInstancesServer struct {
-	ffv1.UnimplementedComputeInstancesServer
-	scenario *testing.ComputeInstanceScenario
-}
-
-func (s *computeInstancesServer) Create(ctx context.Context, request *ffv1.ComputeInstancesCreateRequest) (*ffv1.ComputeInstancesCreateResponse, error) {
-	instance := request.GetObject()
-
-	// Set mock ID and state if not already set
-	if instance.Id == "" {
-		instance.Id = "ci-mock-12345"
-	}
-	if instance.Status == nil {
-		instance.Status = &ffv1.ComputeInstanceStatus{
-			State: ffv1.ComputeInstanceState_COMPUTE_INSTANCE_STATE_PROGRESSING,
-		}
-	}
-
-	log.Printf("Created compute instance: %s (name: %s, template: %s)",
-		instance.Id,
-		instance.GetMetadata().GetName(),
-		instance.GetSpec().GetTemplate())
-
-	return &ffv1.ComputeInstancesCreateResponse{Object: instance}, nil
-}
-
-func (s *computeInstancesServer) Get(ctx context.Context, request *ffv1.ComputeInstancesGetRequest) (*ffv1.ComputeInstancesGetResponse, error) {
-	// Find instance by ID in scenario
-	for _, instanceData := range s.scenario.Instances {
-		if instanceData.ID == request.Id {
-			log.Printf("Retrieved compute instance: %s", request.Id)
-			return &ffv1.ComputeInstancesGetResponse{Object: instanceData.ToProtoInstance()}, nil
-		}
-	}
-
-	// Return NotFound error if instance not in scenario
-	log.Printf("Compute instance not found: %s", request.Id)
-	return nil, status.Errorf(codes.NotFound, "compute instance %q not found", request.Id)
-}
-
-func (s *computeInstancesServer) List(ctx context.Context, request *ffv1.ComputeInstancesListRequest) (*ffv1.ComputeInstancesListResponse, error) {
-	// Convert all scenario instances to proto
-	allInstances := make([]*ffv1.ComputeInstance, len(s.scenario.Instances))
-	for i, instanceData := range s.scenario.Instances {
-		allInstances[i] = instanceData.ToProtoInstance()
-	}
-
-	// Apply filter if provided (simple string matching for mock purposes)
-	filter := request.GetFilter()
-	var instances []*ffv1.ComputeInstance
-
-	if filter != "" {
-		// For mock purposes, handle common CEL filters
-		// If filter is about deletion_timestamp or other metadata, return all non-deleted instances
-		if strings.Contains(filter, "deletion_timestamp") {
-			instances = allInstances // Mock instances don't have deletion_timestamp
-		} else {
-			// Simple filter: check if filter contains the instance ID or name
-			// This is a mock implementation - real server would parse CEL expressions
-			for _, inst := range allInstances {
-				// Check if filter mentions this instance's ID or name
-				if strings.Contains(filter, inst.Id) || strings.Contains(filter, inst.GetMetadata().GetName()) {
-					instances = append(instances, inst)
-				}
-			}
-		}
-	} else {
-		instances = allInstances
-	}
-
-	size := int32(len(instances))
-	total := int32(len(instances))
-	log.Printf("Listed compute instances (filter: %q, matches: %d)", filter, len(instances))
-	return &ffv1.ComputeInstancesListResponse{
-		Items: instances,
-		Size:  &size,
-		Total: &total,
-	}, nil
-}
-
-// Simple mock compute instance templates server
-type computeInstanceTemplatesServer struct {
-	ffv1.UnimplementedComputeInstanceTemplatesServer
-	scenario *testing.ComputeInstanceScenario
-}
-
-func (s *computeInstanceTemplatesServer) Get(ctx context.Context, request *ffv1.ComputeInstanceTemplatesGetRequest) (*ffv1.ComputeInstanceTemplatesGetResponse, error) {
-	// Find template by ID
-	for _, templateData := range s.scenario.Templates {
-		if templateData.ID == request.Id {
-			log.Printf("Retrieved compute instance template: %s", request.Id)
-			return &ffv1.ComputeInstanceTemplatesGetResponse{Object: templateData.ToProtoTemplate()}, nil
-		}
-	}
-
-	// Return NotFound error if template not in scenario
-	log.Printf("Compute instance template not found: %s", request.Id)
-	return nil, status.Errorf(codes.NotFound, "compute instance template %q not found", request.Id)
-}
-
-func (s *computeInstanceTemplatesServer) List(ctx context.Context, request *ffv1.ComputeInstanceTemplatesListRequest) (*ffv1.ComputeInstanceTemplatesListResponse, error) {
-	// Convert all scenario templates to proto
-	allTemplates := make([]*ffv1.ComputeInstanceTemplate, len(s.scenario.Templates))
-	for i, templateData := range s.scenario.Templates {
-		allTemplates[i] = templateData.ToProtoTemplate()
-	}
-
-	// Apply filter if provided (simple string matching for mock purposes)
-	filter := request.GetFilter()
-	var templates []*ffv1.ComputeInstanceTemplate
-
-	if filter != "" {
-		// For mock purposes, handle common CEL filters
-		// If filter is about deletion_timestamp or other metadata, return all non-deleted templates
-		if strings.Contains(filter, "deletion_timestamp") {
-			templates = allTemplates // Mock templates don't have deletion_timestamp
-		} else {
-			// Simple filter: check if filter contains the template ID or name
-			// This is a mock implementation - real server would parse CEL expressions
-			for _, tmpl := range allTemplates {
-				// Check if filter mentions this template's ID or name
-				if strings.Contains(filter, tmpl.Id) || strings.Contains(filter, tmpl.GetMetadata().GetName()) {
-					templates = append(templates, tmpl)
-				}
-			}
-		}
-	} else {
-		templates = allTemplates
-	}
-
-	size := int32(len(templates))
-	total := int32(len(templates))
-	log.Printf("Listed compute instance templates (filter: %q, matches: %d)", filter, len(templates))
-	return &ffv1.ComputeInstanceTemplatesListResponse{
-		Items: templates,
-		Size:  &size,
-		Total: &total,
-	}, nil
-}
-
 // Dummy metadata server - required for login
 type metadataServer struct {
 	metadatav1.UnimplementedMetadataServer
@@ -250,13 +105,6 @@ func main() {
 	}
 	log.Printf("Loaded event scenario: %s - %s", scenario.Name, scenario.Description)
 
-	// Load compute instance scenario from file
-	ciScenario, err := testing.LoadComputeInstanceScenarioFromFile(defaultComputeInstanceScenarioFile)
-	if err != nil {
-		log.Fatalf("Failed to load compute instance scenario from %s: %v", defaultComputeInstanceScenarioFile, err)
-	}
-	log.Printf("Loaded compute instance scenario: %s - %s", ciScenario.Name, ciScenario.Description)
-
 	listener, err := net.Listen("tcp", "127.0.0.1:"+serverPort)
 	if err != nil {
 		log.Fatalf("Failed to listen: %v", err)
@@ -271,8 +119,6 @@ func main() {
 	eventsv1.RegisterEventsServer(grpcServer, &loggingEventsServer{EventsServerFuncs: eventsServerFuncs})
 
 	ffv1.RegisterClustersServer(grpcServer, &clustersServer{})
-	ffv1.RegisterComputeInstancesServer(grpcServer, &computeInstancesServer{scenario: ciScenario})
-	ffv1.RegisterComputeInstanceTemplatesServer(grpcServer, &computeInstanceTemplatesServer{scenario: ciScenario})
 	metadatav1.RegisterMetadataServer(grpcServer, &metadataServer{})
 
 	// Register health service
